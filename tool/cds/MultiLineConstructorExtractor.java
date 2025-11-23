@@ -3,12 +3,12 @@ import java.util.*;
 
 public class MultiLineConstructorExtractor {
     public static void main(String[] args) {
-        String srcDir = "/home/muratsivas76/istasyon/java/elemurrt/src";
-        String outFile = "/home/muratsivas76/istasyon/java/elemurrt/tool/constructors.txt";
+        String srcDir = "/home/muratsivas76/istasyon/java/extended_elemurrt/src";
+        String outFile = "/home/muratsivas76/istasyon/java/extended_elemurrt/tool/cds/constructors.txt";
         
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(outFile))) {
             processJavaFiles(new File(srcDir), writer, srcDir);
-            System.out.println("Extracted succesfully to tools/constructors.txt!");
+            System.out.println("Extracted succesfully to tool/cds/constructors.txt!");
         } catch (IOException e) {
             System.err.println("Hata: " + e.getMessage());
         }
