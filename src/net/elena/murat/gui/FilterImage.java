@@ -29,8 +29,8 @@ implements java.io.Serializable {
     }
     
     if (name.endsWith(".jpg")  ||
-        name.endsWith(".jpeg") ||
-        name.endsWith(".png")) {
+      name.endsWith(".jpeg") ||
+      name.endsWith(".png")) {
       return true;
     }
     
