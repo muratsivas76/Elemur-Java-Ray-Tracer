@@ -3889,6 +3889,14 @@ public class Point3 {
     }
   }
   
+  public Point3 minus(Point3 other) {
+    return new Point3(this.x - other.x, this.y - other.y, this.z - other.z);
+  }
+
+  public Point3 minus(Vector3 vector) {
+    return new Point3(this.x - vector.x, this.y - vector.y, this.z - vector.z);
+  }
+
   public Point3 add(Vector3 v) {
     return new Point3(x + v.x, y + v.y, z + v.z);
   }
@@ -3955,6 +3963,14 @@ public class Point3 {
     return this.x * vector.x + this.y * vector.y + this.z * vector.z;
   }
   
+  public Point3 normalize() {
+    double length = length();
+    if (length == 0) {
+        return new Point3(0, 0, 0);
+    }
+    return new Point3(x / length, y / length, z / length);
+  }
+
   @Override
   public String toString() {
     return String.format(java.util.Locale.ENGLISH, "P(%.2f, %.2f, %.2f)", x, y, z);
@@ -5177,6 +5193,14 @@ public class Vector3 {
     }
   }
   
+  public Vector3 times(double scalar) {
+    return new Vector3(x * scalar, y * scalar, z * scalar);
+  }
+
+  public Vector3 times(Vector3 other) {
+    return new Vector3(x * other.x, y * other.y, z * other.z);
+  }
+
   // Vector3.java'ya bu metodları ekleyin
   public Vector3 normalizeSafe() {
     double len = length();
@@ -5816,6 +5840,8 @@ public class Intersection {
   private final Vector3 normal;   // Normal vector at intersection point
   private final double distance;  // Distance from ray origin to intersection point (t parameter)
   private final EMShape shape;    // Intersected object
+  private double u = 0.5;         // UV coordinate U
+  private double v = 0.5;         // UV coordinate V
   
   public Intersection(Point3 point, Vector3 normal, double distance, EMShape shape) {
     this.point = point;
@@ -5847,6 +5873,21 @@ public class Intersection {
   
   public EMShape getShape() {
     return shape;
+  }
+  
+  // UV getter methods
+  public double getU() {
+    return u;
+  }
+  
+  public double getV() {
+    return v;
+  }
+  
+  // UV setter method
+  public void setUVCoordinates(double u, double v) {
+    this.u = u;
+    this.v = v;
   }
   
   @Override
@@ -6083,8 +6124,7 @@ public class GradientTextMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight)light).getDirectionAt(worldPoint).normalize();
       } else {
-      System.err.println("Warning: Unsupported light type: " + light.getClass().getName());
-      return null;
+		return (light.getDirectionAt(worldPoint).normalize());
     }
   }
   
@@ -7448,6 +7488,10 @@ public class WordMaterial implements Material {
   
   private boolean isTriangleEtc = false;
   
+  // Billboard dimensions
+  private double billboardWidth = 1.0;
+  private double billboardHeight = 1.0;
+
   // Text rendering parameters
   private String text;
   private Color foregroundColor;
@@ -7521,7 +7565,81 @@ public class WordMaterial implements Material {
   }
   
   /**
-   * Full constructor with all parameters
+   * Constructor for sentences with automatic sizing and UV offset support
+   * @param sentence The sentence text to render
+   * @param textColor Text color
+   * @param sentenceFont Font for the sentence
+   * @param maxWidth Maximum texture width
+   * @param uOffset Horizontal UV offset
+   * @param vOffset Vertical UV offset
+   */
+  public WordMaterial(String sentence, Color textColor, Font sentenceFont, int maxWidth, 
+                     double uOffset, double vOffset) {
+    this.text = sentence;
+    this.foregroundColor = textColor;
+    this.backgroundColor = new Color(0x00000000, true); // Transparent background
+    this.font = sentenceFont;
+    this.uOffset = uOffset;
+    this.vOffset = vOffset;
+    
+    // Calculate texture size based on sentence
+    BufferedImage temp = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+    Graphics2D g = temp.createGraphics();
+    g.setFont(sentenceFont);
+    FontMetrics fm = g.getFontMetrics();
+    
+    int textWidth = fm.stringWidth(sentence);
+    int textHeight = fm.getHeight();
+    
+    this.width = Math.min(textWidth + 40, maxWidth);
+    this.height = textHeight + 20;
+    
+    g.dispose();
+    
+    this.texture = createTextImage(sentence, textColor, backgroundColor, 
+                                  sentenceFont, false, null, null, width, height);
+  }
+  
+  /**
+   * Constructor for multi-line sentences with automatic sizing and UV offset support
+   * @param lines Array of text lines
+   * @param textColor Text color
+   * @param sentenceFont Font for the sentences
+   * @param maxWidth Maximum texture width
+   * @param uOffset Horizontal UV offset
+   * @param vOffset Vertical UV offset
+   */
+  public WordMaterial(String[] lines, Color textColor, Font sentenceFont, int maxWidth,
+                     double uOffset, double vOffset) {
+    this.text = String.join(" ", lines);
+    this.foregroundColor = textColor;
+    this.backgroundColor = new Color(0x00000000, true);
+    this.font = sentenceFont;
+    this.uOffset = uOffset;
+    this.vOffset = vOffset;
+    
+    // Calculate multi-line texture size
+    BufferedImage temp = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+    Graphics2D g = temp.createGraphics();
+    g.setFont(sentenceFont);
+    FontMetrics fm = g.getFontMetrics();
+    
+    int maxLineWidth = 0;
+    for (String line : lines) {
+      maxLineWidth = Math.max(maxLineWidth, fm.stringWidth(line));
+    }
+    
+    this.width = Math.min(maxLineWidth + 40, maxWidth);
+    this.height = (fm.getHeight() * lines.length) + 20;
+    
+    g.dispose();
+    
+    this.texture = createMultiLineTextImage(lines, textColor, backgroundColor, 
+                                           sentenceFont, width, height);
+  }
+  
+  /**
+   * Full constructor with all parameters including UV offset support
    * @param text The text to render
    * @param foregroundColor Text color
    * @param backgroundColor Background color
@@ -7531,23 +7649,46 @@ public class WordMaterial implements Material {
    * @param wordImage Optional image to display above text (null for text only)
    * @param width Texture width
    * @param height Texture height
-   */
+   * @param uOffset Horizontal UV offset
+   * @param vOffset Vertical UV offset
+  */
   public WordMaterial(String text, Color foregroundColor, Color backgroundColor,
     Font font, boolean useGradient, Color gradientColor, BufferedImage wordImage,
-    int width, int height) {
-    this.text = text;
-    this.foregroundColor = foregroundColor;
-    this.backgroundColor = backgroundColor;
-    this.font = font;
-    this.gradientEnabled = useGradient;
-    this.gradientColor = gradientColor;
-    this.wordImage = wordImage;
-    this.width = width;
-    this.height = height;
-    
-    this.texture = createTextImage(text, foregroundColor, backgroundColor, font,
-    useGradient, gradientColor, wordImage, width, height);
-  }
+    int width, int height, double uOffset, double vOffset) {
+      this.text = text;
+      this.foregroundColor = foregroundColor;
+      this.backgroundColor = backgroundColor;
+      this.font = font;
+      this.gradientEnabled = useGradient;
+      this.gradientColor = gradientColor;
+      this.wordImage = wordImage;
+      this.width = width;
+      this.height = height;
+      this.uOffset = uOffset;
+      this.vOffset = vOffset;
+  
+      this.texture = createTextImage(text, foregroundColor, backgroundColor, font,
+      useGradient, gradientColor, wordImage, width, height);
+   }
+
+	/**
+	* Full constructor with all parameters (without UV offset)
+	* @param text The text to render
+	* @param foregroundColor Text color
+	* @param backgroundColor Background color
+	* @param font The font to use
+	* @param useGradient Whether to apply gradient effect
+	* @param gradientColor Gradient end color (required if useGradient is true)
+	* @param wordImage Optional image to display above text (null for text only)
+	* @param width Texture width
+	* @param height Texture height
+	*/
+	public WordMaterial(String text, Color foregroundColor, Color backgroundColor,
+	Font font, boolean useGradient, Color gradientColor, BufferedImage wordImage,
+	int width, int height) {
+	this(text, foregroundColor, backgroundColor, font, useGradient, gradientColor, 
+       wordImage, width, height, 0.0, 0.0); // UV offset default 0
+	}
   
   /**
    * Creates a BufferedImage with the rendered text and optional image
@@ -7568,61 +7709,120 @@ public class WordMaterial implements Material {
     
     BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
     Graphics2D g2d = image.createGraphics();
+        
+    // Background ARGB
+    g2d.setColor(bgColor);
+    g2d.setComposite(AlphaComposite.Src); 
+    g2d.fillRect(0, 0, width, height);
+    g2d.setComposite(AlphaComposite.SrcOver);
     
-    // Clear background (transparent or colored)
-    if (bgColor.getAlpha() == 0) {
-      g2d.setComposite(AlphaComposite.Clear);
-      g2d.fillRect(0, 0, width, height);
-      g2d.setComposite(AlphaComposite.SrcOver);
-      } else {
-      g2d.setColor(bgColor);
-      g2d.fillRect(0, 0, width, height);
-    }
-    
-    // Enable anti-aliasing for smooth rendering
+    // Anti-aliasing
     g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
     g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
     g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
     g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
     
-    // Draw word image if provided
+    // Word image
     if (wordImage != null) {
-      int imageSize = Math.min(width, height) - 64;
-      int imageX = (width - imageSize) / 2;
-      int imageY = 32;
-      
-      g2d.drawImage(wordImage, imageX, imageY, imageSize, imageSize, null);
+        int imageSize = Math.min(width, height) - 64;
+        int imageX = (width - imageSize) / 2;
+        int imageY = 32;
+        
+        BufferedImage opaqueImage = new BufferedImage(imageSize, imageSize, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D imgG2d = opaqueImage.createGraphics();
+        imgG2d.drawImage(wordImage, 0, 0, imageSize, imageSize, null);
+        imgG2d.dispose();
+        
+        // Force opaque
+        for (int i = 0; i < imageSize; i++) {
+            for (int j = 0; j < imageSize; j++) {
+                int rgb = opaqueImage.getRGB(i, j);
+                int alpha = (rgb >> 24) & 0xFF;
+                if (alpha > 10) {
+                    opaqueImage.setRGB(i, j, (255 << 24) | (rgb & 0x00FFFFFF));
+                }
+            }
+        }
+        
+        g2d.drawImage(opaqueImage, imageX, imageY, null);
     }
     
-    // Apply gradient or solid color for text
+    // Text with gradient or solid color
     if (useGradient && gradientColor != null) {
-      int textY = (wordImage != null) ? (height * 2 / 3) : (height / 2);
-      GradientPaint gradient = new GradientPaint(0, textY, fgColor, width, textY + 50, gradientColor);
-      g2d.setPaint(gradient);
-      } else {
-      g2d.setColor(fgColor);
+        int textY = (wordImage != null) ? (height * 2 / 3) : (height / 2);
+        GradientPaint gradient = new GradientPaint(0, textY, makeOpaque(fgColor), 
+                                                 width, textY + 50, makeOpaque(gradientColor));
+        g2d.setPaint(gradient);
+    } else {
+        g2d.setColor(makeOpaque(fgColor));
     }
     
-    // Set font - NO AUTO-SCALING AT ALL
     g2d.setFont(font);
-    
-    // Center text horizontally
     FontMetrics metrics = g2d.getFontMetrics();
     int textWidth = metrics.stringWidth(text);
     int textX = (width - textWidth) / 2;
+    int textY = (wordImage != null) ? height * 3 / 4 : (height - metrics.getHeight()) / 2 + metrics.getAscent();
     
-    // Calculate text Y position based on whether image is present
-    int textY;
-    if (wordImage != null) {
-      textY = height * 3 / 4;
-      } else {
-      textY = (height - metrics.getHeight()) / 2 + metrics.getAscent();
-    }
-    
-    // NO AUTO-SCALING - draw text as is, even if it goes outside bounds
     g2d.drawString(text, textX, textY);
     g2d.dispose();
     
+    return image;
+  }
+  
+  /**
+   * Makes a color fully opaque (alpha=255)
+   * Used for text and images to ensure they render with full opacity
+   */
+   private static Color makeOpaque(Color color) {
+    return new Color(color.getRed(), color.getGreen(), color.getBlue(), 255);
+   }
+  
+  /**
+   * Creates a BufferedImage with multiple lines of text
+   * @param lines Array of text lines
+   * @param fgColor Text color
+   * @param bgColor Background color
+   * @param font Font to use
+   * @param width Image width
+   * @param height Image height
+   * @return BufferedImage with rendered multi-line content
+   */
+  private static BufferedImage createMultiLineTextImage(String[] lines, Color fgColor, Color bgColor,
+                                                       Font font, int width, int height) {
+    
+    BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+    Graphics2D g2d = image.createGraphics();
+    
+    // ARGB support:
+    g2d.setColor(bgColor);
+    g2d.setComposite(AlphaComposite.Src);
+    g2d.fillRect(0, 0, width, height);
+    g2d.setComposite(AlphaComposite.SrcOver);
+    
+    // Enable anti-aliasing
+    g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+    g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+    
+    // Set text color and font
+    g2d.setColor(fgColor);
+    g2d.setFont(font);
+    
+    FontMetrics metrics = g2d.getFontMetrics();
+    int lineHeight = metrics.getHeight();
+    
+    // Center each line vertically and horizontally
+    int startY = (height - (lineHeight * lines.length)) / 2 + metrics.getAscent();
+    
+    for (int i = 0; i < lines.length; i++) {
+      String line = lines[i];
+      int textWidth = metrics.stringWidth(line);
+      int textX = (width - textWidth) / 2;
+      int textY = startY + (i * lineHeight);
+      
+      g2d.drawString(line, textX, textY);
+    }
+    
+    g2d.dispose();
     return image;
   }
   
@@ -7634,7 +7834,7 @@ public class WordMaterial implements Material {
   public void setObjectTransform(Matrix4 inverseTransform) {
     if (inverseTransform != null) {
       this.objectInverseTransform = inverseTransform;
-      } else {
+    } else {
       this.objectInverseTransform = new Matrix4();
     }
   }
@@ -7643,6 +7843,23 @@ public class WordMaterial implements Material {
     this.isTriangleEtc = nbool;
   }
   
+	// Getters Setters:
+	public double getBillboardWidth() {
+		return billboardWidth;
+	}
+
+	public void setBillboardWidth(double billboardWidth) {
+		this.billboardWidth = billboardWidth;
+	}
+
+	public double getBillboardHeight() {
+		return billboardHeight;
+	}
+
+	public void setBillboardHeight(double billboardHeight) {
+		this.billboardHeight = billboardHeight;
+	}
+
   /**
    * Returns the color at the given world point on the surface
    * Uses planar UV mapping on XY plane similar to TransparentPNGMaterial
@@ -7655,8 +7872,7 @@ public class WordMaterial implements Material {
   @Override
   public Color getColorAt(Point3 point, Vector3 normal, Light light, Point3 viewerPos) {
     if (texture == null) {
-      setTransparency(1.0);
-      return new Color(0, 0, 0, 0);
+      return new Color(0, 0, 0, 0); // Fully transparent
     }
     
     Point3 local = objectInverseTransform.transformPoint(point);
@@ -7667,9 +7883,11 @@ public class WordMaterial implements Material {
     if (isTriangleEtc) {
       u = local.x + 0.5;
       v = local.z + 0.5;
-      } else {
-      u = (local.x + 1.0) * 0.5;
-      v = (1.0 - (local.y + 1.0) * 0.5);
+    } else {
+        // BILLBOARD BOUNDS ACCORDING
+        u = (local.x / billboardWidth) + 0.5;   // [-width/2, width/2] -> [0, 1]
+        v = (local.y / billboardHeight) + 0.5;  // [-height/2, height/2] -> [0, 1]
+        v = 1.0 - v; // Flip V for image coordinates
     }
     
     // Apply UV scale and offset
@@ -7681,10 +7899,9 @@ public class WordMaterial implements Material {
     if (isRepeatTexture) {
       finalU = scaledU - Math.floor(scaledU);
       finalV = scaledV - Math.floor(scaledV);
-      } else {
+    } else {
       if (scaledU < 0.0 || scaledU > 1.0 || scaledV < 0.0 || scaledV > 1.0) {
-        setTransparency(1.0);
-        return new Color(0, 0, 0, 0);
+        return new Color(0, 0, 0, 0); // Fully transparent for out-of-bounds
       }
       finalU = scaledU;
       finalV = scaledV;
@@ -7693,6 +7910,10 @@ public class WordMaterial implements Material {
     int px = (int) (finalU * (texture.getWidth() - 1));
     int py = (int) (finalV * (texture.getHeight() - 1));
     
+    // Clamp coordinates to texture bounds
+    px = Math.max(0, Math.min(px, texture.getWidth() - 1));
+    py = Math.max(0, Math.min(py, texture.getHeight() - 1));
+    
     int argb = texture.getRGB(px, py);
     
     int alpha = (argb >> 24) & 0xFF;
@@ -7700,13 +7921,11 @@ public class WordMaterial implements Material {
     int green = (argb >> 8) & 0xFF;
     int blue = argb & 0xFF;
     
-    if (alpha > 5) {
-      setTransparency(0.0);
-      return new Color(red, green, blue, 255);
-    }
+    // Set transparency based on actual pixel alpha
+    this.transparency = 1.0 - (alpha / 255.0);
     
-    setTransparency(1.0);
-    return new Color(0, 0, 0, 0);
+    // Return color with exact alpha from texture
+    return new Color(red, green, blue, alpha);
   }
   
   /**
@@ -7734,10 +7953,6 @@ public class WordMaterial implements Material {
   @Override
   public double getTransparency() {
     return transparency;
-  }
-  
-  private void setTransparency(double tnw) {
-    this.transparency = tnw;
   }
   
   /**
@@ -7979,7 +8194,7 @@ public class WordMaterial implements Material {
     gradientEnabled, gradientColor, wordImage, width, height);
   }
   
-  private String imagePath = "textures/turkeyFlag.png";
+  private String imagePath = "null";
   public void setImagePath(String npath) {
     this.imagePath = npath;
   }
@@ -8000,65 +8215,17 @@ public class WordMaterial implements Material {
     sb.append("        fontSize = " + font.getSize() + ";\n");
     sb.append("        useGradient = " + gradientEnabled + ";\n");
     sb.append("        gradientColor = " + net.elena.murat.util.ColorUtil.toColorString(gradientColor) + ";\n");
-    sb.append("        imagePath = " + getImagePath() + ";\n");
     sb.append("        width = " + width + ";\n");
     sb.append("        height = " + height + ";\n");
+    sb.append("        uOffset = " + uOffset + ";\n");
+    sb.append("        vOffset = " + vOffset + ";\n");
+    sb.append("        billboardWidth = " + billboardWidth + ";\n");
+    sb.append("        billboardHeight = " + billboardHeight + ";\n");
     sb.append("    }");
     return sb.toString();
   }
   
 }
-
-/***
-// Only text
-Material ekmekMaterial = new WordMaterial("Ekmek");
-
-// Text + image
-BufferedImage breadImage = ImageIO.read(new File("bread.png"));
-Material ekmekMaterial = new WordMaterial("Ekmek", Color.BLACK,
-new Color(0x00000000, true), new Font("Arial", Font.BOLD, 36), breadImage);
-
-// Gradient + image
-Material brodMaterial = new WordMaterial("Brød", Color.BLUE,
-new Color(0x00000000, true), new Font("Arial", Font.BOLD, 42),
-Color.CYAN, breadImage);
-
-// Seffaflik icin daima ARGB formatinda yazin:
-new Color(0x00000000, true); // Tam seffaf
-new Color(0x80ffffff, true); // %50 seffaf beyaz
-
-// RGB formatinda yazacaksaniz hasAlpha=false kullanin:
-new Color(0xffffff); // Opak beyaz
-new Color(0x000000); // Opak siyah
-
-Triangle t1 {
-point1 = P(-0.5, 0.0, -0.5);
-point2 = P(0.5, 0.0, -0.5);
-point3 = P(0.0, 2.0, 0.0);
-material = lambert;
-}
-
-Triangle t2 {
-point1 = P(0.5, 0.0, -0.5);
-point2 = P(0.5, 0.0, 0.5);
-point3 = P(0.0, 2.0, 0.0);
-material = lambert;
-}
-
-Triangle t3 {
-point1 = P(0.5, 0.0, 0.5);
-point2 = P(-0.5, 0.0, 0.5);
-point3 = P(0.0, 2.0, 0.0);
-material = wordMaterial
-}
-
-Triangle t4 {
-point1 = P(-0.5, 0.0, 0.5);
-point2 = P(-0.5, 0.0, -0.5);
-point3 = P(0.0, 2.0, 0.0);
-material = lambert;
-}
- */
 
 
 // =========================================
@@ -9424,7 +9591,8 @@ public class GradientChessMaterial implements Material {
       attenuatedIntensity = fLight.getAttenuatedIntensity(worldPoint);
     }
     else {
-      return Color.BLACK;
+	  lightDirection = light.getDirectionAt(worldPoint);
+      attenuatedIntensity = light.getAttenuatedIntensity(worldPoint);
     }
     
     // Diffuse component
@@ -11653,6 +11821,7 @@ public class MirrorMaterial implements Material {
     @Override public double getReflectivity() { return reflectivity; }
     @Override public double getIndexOfRefraction() { return 1.0; } // Mirror doesn't refract
     @Override public double getTransparency() { return 0.0; }
+    
   @Override
   public String toString() {
     StringBuffer sb = new StringBuffer();
@@ -11993,23 +12162,7 @@ public class CircleTextureMaterial implements Material {
       );
     }
     
-    Vector3 lightDirection;
-    if (light instanceof MuratPointLight) {
-      lightDirection = ((MuratPointLight) light).getPosition().subtract(worldPoint).normalize();
-      } else if (light instanceof ElenaDirectionalLight) {
-      lightDirection = ((ElenaDirectionalLight) light).getDirection().negate().normalize();
-      } else if (light instanceof PulsatingPointLight) {
-      lightDirection = ((PulsatingPointLight) light).getPosition().subtract(worldPoint).normalize();
-      } else if (light instanceof BioluminescentLight) {
-      lightDirection = ((BioluminescentLight) light).getDirectionAt(worldPoint).normalize();
-      } else if (light instanceof BlackHoleLight) {
-      lightDirection = ((BlackHoleLight) light).getDirectionAt(worldPoint).normalize();
-      } else if (light instanceof FractalLight) {
-      lightDirection = ((FractalLight) light).getDirectionAt(worldPoint).normalize();
-      } else {
-      System.err.println("Warning: Unknown or unsupported light type for CircleTextureMaterial shading: " + light.getClass().getName());
-      return Color.BLACK;
-    }
+    Vector3 lightDirection = getLightDirection(light, worldPoint);
     
     // Diffuse component
     double NdotL = Math.max(0, worldNormal.dot(lightDirection));
@@ -12091,8 +12244,8 @@ public class CircleTextureMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight)light).getDirectionAt(worldPoint).normalize();
       } else {
-      System.err.println("Warning: Unknown light type in PlaneFaceElenaTextureMaterial");
-      return new Vector3(0, 1, 0); // Varsayılan yön
+	  return (light.getDirectionAt(worldPoint).normalize());
+      //return new Vector3(0, -1, 0); // Varsayılan yön
     }
   }
   
@@ -12585,8 +12738,8 @@ public class LambertMaterial implements Material {
       lightDirection = fLight.getDirectionAt(point);
       attenuatedIntensity = fLight.getAttenuatedIntensity(point);
       } else {
-      System.err.println("Warning: Unknown or unsupported light type for Lambertian shading: " + light.getClass().getName());
-      return Color.BLACK;
+	  lightDirection = light.getDirectionAt(point);
+	  attenuatedIntensity = light.getAttenuatedIntensity(point);
     }
     
     // Diffuse component
@@ -12908,9 +13061,8 @@ public class GradientImageTextMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight)light).getDirectionAt(worldPoint).normalize();
       } else {
-      System.err.println("Warning: Unsupported light type: " + light.getClass().getName());
-      return null;
-    }
+		return (light.getDirectionAt(worldPoint).normalize());
+	  }
   }
   
   @Override
@@ -14971,7 +15123,7 @@ public class DiffuseMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight) light).getDirectionAt(point).normalize();
     }
-    return null;
+    return (light.getDirectionAt(point).normalize());
   }
   
   private double clamp01(double val) {
@@ -16915,8 +17067,8 @@ public class MarbleMaterial implements Material {
       lightDirection = fLight.getDirectionAt(worldPoint);
       attenuatedIntensity = fLight.getAttenuatedIntensity(worldPoint);
       } else {
-      System.err.println("Warning: Unknown or unsupported light type for MarbleMaterial shading: " + light.getClass().getName());
-      return Color.BLACK;
+	  lightDirection = light.getDirectionAt(worldPoint);
+	  attenuatedIntensity = light.getAttenuatedIntensity(worldPoint);
     }
     
     // Diffuse component
@@ -17210,8 +17362,7 @@ public class PhongTextMaterial implements Material {
       } else if (light instanceof FractalLight) {
       attenuatedIntensity = ((FractalLight) light).getAttenuatedIntensity(point);
       } else {
-      System.err.println("Warning: Unsupported light type in PhongTextMaterial: " + light.getClass().getName());
-      return Color.BLACK;
+	  attenuatedIntensity = light.getAttenuatedIntensity(point);
     }
     
     // Diffuse component
@@ -17310,8 +17461,7 @@ public class PhongTextMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight) light).getDirectionAt(point).normalize();
       } else {
-      System.err.println("Warning: Unknown light type in PhongTextMaterial: " + light.getClass().getName());
-      return new Vector3(0, 1, 0); // Fallback direction
+		return (light.getDirectionAt(point).normalize());
     }
   }
   
@@ -19404,9 +19554,9 @@ public class TriangleMaterial implements Material {
       lightDirection = fLight.getDirectionAt(worldPoint);
       attenuatedIntensity = fLight.getAttenuatedIntensity(worldPoint);
       } else {
-      System.err.println("Warning: Unknown or unsupported light type for TriangleMaterial shading: " + light.getClass().getName());
-      return Color.BLACK;
-    }
+		lightDirection = light.getDirectionAt(worldPoint);
+		attenuatedIntensity = light.getAttenuatedIntensity(worldPoint);
+     }
     
     // Diffuse component
     double NdotL = Math.max(0, worldNormal.dot(lightDirection));
@@ -19476,8 +19626,7 @@ public class TriangleMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight)light).getDirectionAt(worldPoint).normalize();
       } else {
-      System.err.println("Warning: Unknown light type in PlaneFaceElenaTextureMaterial");
-      return new Vector3(0, 1, 0); // Varsayılan yön
+	  return (light.getDirectionAt(worldPoint).normalize());
     }
   }
   
@@ -19823,7 +19972,8 @@ public class RectangleCheckerMaterial implements Material {
       lightDirection = fLight.getDirectionAt(worldPoint);
       attenuatedIntensity = fLight.getAttenuatedIntensity(worldPoint);
       } else {
-      return Color.BLACK;
+	  lightDirection = light.getDirectionAt(worldPoint);
+	  attenuatedIntensity = light.getAttenuatedIntensity(worldPoint);
     }
     
     // Diffuse component
@@ -20178,8 +20328,7 @@ public class StripedMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight)light).getDirectionAt(worldPoint).normalize();
       } else {
-      System.err.println("Warning: Unknown light type in PlaneFaceElenaTextureMaterial");
-      return new Vector3(0, 1, 0); // Varsayılan yön
+		return (light.getDirectionAt(worldPoint).normalize());
     }
   }
   
@@ -23456,9 +23605,7 @@ public class SquaredMaterial implements Material {
       } else if (light instanceof FractalLight) {
       attenuatedIntensity = ((FractalLight) light).getAttenuatedIntensity(worldPoint);
       } else {
-      // Bu else bloğuna düşmemesi gerekiyor, çünkü getLightDirection zaten kontrol ediyor.
-      System.err.println("Warning: Unknown or unsupported light type for SquaredMaterial shading (intensity): " + light.getClass().getName());
-      return Color.BLACK;
+	  attenuatedIntensity = light.getAttenuatedIntensity(worldPoint);
     }
     
     // Diffuse component
@@ -23496,17 +23643,7 @@ public class SquaredMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight)light).getDirectionAt(point);
       } else {
-      //return new Vector3(0, 1, 0).normalize();
-    }
-    
-    // Reflection fallback
-    try {
-      Method getDirMethod = light.getClass().getMethod("getDirectionAt", Point3.class);
-      return (Vector3) getDirMethod.invoke(light, point);
-    }
-    catch (Exception e) {
-      System.err.println("Unsupported light type: " + light.getClass().getName());
-      return new Vector3(0, 1, 0).normalize(); // Güvenli varsayılan
+		return light.getDirectionAt(point);
     }
   }
   
@@ -24074,7 +24211,7 @@ public class SphereWordTextureMaterial implements Material {
     
     // If pixel is from background (low alpha), use bgColor transparency
     // If pixel is from text/image (high alpha), force opaque
-    int finalAlpha = (alpha < 128) ? bgColor.getAlpha() : 255;
+    final int finalAlpha = alpha;//(alpha < 128) ? bgColor.getAlpha() : 255;
     
     transparency = 1.0 - (finalAlpha / 255.0);
     return new Color(red, green, blue, finalAlpha);
@@ -24201,7 +24338,7 @@ public class SphereWordTextureMaterial implements Material {
       } else if (light instanceof net.elena.murat.light.SpotLight) {
       return ((net.elena.murat.light.SpotLight) light).getDirectionAt(worldPoint).normalize();
     }
-    return null;
+	return (light.getDirectionAt(worldPoint).normalize());
   }
   
   /**
@@ -24984,7 +25121,7 @@ public class RoughMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight) light).getDirectionAt(point).normalize();
     }
-    return null;
+	return (light.getDirectionAt(point).normalize());
   }
   
   private double clamp01(double val) {
@@ -26116,6 +26253,7 @@ public class StarfieldMaterial implements Material {
   @Override public double getReflectivity() { return reflectivity; }
   @Override public double getIndexOfRefraction() { return 1.0; }
   @Override public double getTransparency() { return 0.95; }
+  
   @Override
   public String toString() {
     StringBuffer sb = new StringBuffer();
@@ -26904,10 +27042,7 @@ public class TexturedPhongMaterial implements Material {
         } else if (light instanceof FractalLight) {
         attenuatedIntensity = ((FractalLight) light).getAttenuatedIntensity(worldPoint);
         } else {
-        // Bu else bloğuna düşmemesi gerekiyor, çünkü getLightDirection zaten kontrol ediyor.
-        // Ancak bir güvenlik önlemi olarak burada da bir uyarı basabiliriz.
-        System.err.println("Warning: Unknown or unsupported light type for TexturedPhongMaterial shading (intensity): " + light.getClass().getName());
-        return Color.BLACK;
+		attenuatedIntensity = light.getAttenuatedIntensity(worldPoint);
       }
       
       // Diffuse component: scaled by the texture color
@@ -27022,8 +27157,7 @@ public class TexturedPhongMaterial implements Material {
       } else if (light instanceof FractalLight) {
       return ((FractalLight)light).getDirectionAt(worldPoint).normalize();
       } else {
-      System.err.println("Warning: Unknown light type in PlaneFaceElenaTextureMaterial");
-      return new Vector3(0, 1, 0); // Varsayılan yön
+		return (light.getDirectionAt(worldPoint).normalize());
     }
   }
   
@@ -27714,8 +27848,8 @@ public class CheckerboardMaterial implements Material {
       }
       else {
         // Fallback for unknown lights
-        dir = new Vector3(0, 1, 0); // Default upward direction
-        intensity = light.getIntensity();
+        dir = light.getDirectionAt(point).normalize();
+        intensity = light.getAttenuatedIntensity(point);
       }
       
       return new LightProperties(dir, light.getColor(), intensity);
@@ -29360,13 +29494,7 @@ public class MetallicMaterial implements Material {
         } else if (light instanceof SpotLight) {
             intensity = ((SpotLight) light).getAttenuatedIntensity(point);
         } else {
-            // Fallback for other light types
-            try {
-                Method getIntensityMethod = light.getClass().getMethod("getIntensity");
-                intensity = (Double) getIntensityMethod.invoke(light);
-            } catch (Exception e) {
-                intensity = 1.0; // Default intensity
-            }
+            intensity = light.getAttenuatedIntensity(point);
         }
         
         // Diffuse component (low for metals)
@@ -29404,14 +29532,7 @@ public class MetallicMaterial implements Material {
         } else if (light instanceof SpotLight) {
             return ((SpotLight) light).getDirectionAt(point).normalize();
         } else {
-            // Fallback for other light types
-            try {
-                Method getDirMethod = light.getClass().getMethod("getDirectionAt", Point3.class);
-                Vector3 dir = (Vector3) getDirMethod.invoke(light, point);
-                return dir != null ? dir.normalize() : new Vector3(0, 1, 0).normalize();
-            } catch (Exception e) {
-                return new Vector3(0, 1, 0).normalize(); // Safe default
-            }
+            return (light.getDirectionAt(point).normalize());
         }
     }
     
@@ -32332,7 +32453,7 @@ public class EmojiBillboard implements EMShape {
     
     return Double.POSITIVE_INFINITY;
   }
-  
+
   @Override
   public List<IntersectionInterval> intersectAll(Ray ray) {
     double t = intersect(ray);
@@ -35889,7 +36010,7 @@ public class ElenaMuratRayTracer {
         lightDir = bio.getDirectionAt(point);
         distance = bio.getClosestDistance(point);
         } else {
-			// Custom Light Support - Light interface kullan
+			// Custom Light Support - Light interface
 			lightDir = light.getDirectionAt(point);
 			Point3 lightPosition = light.getPosition();
 			if (lightPosition != null) {
@@ -35961,155 +36082,6 @@ public class ElenaMuratRayTracer {
   }
   
   public static void main(String[] args) {
-    // Classes for compiling all packages easily
-    UnionCSG ucsg = null;
-    IntersectionCSG icsg = null;
-    DifferenceCSG dcsg = null;
-    PulsatingPointLight ppl = null;
-    BioluminescentLight blm = null;
-    BlackHoleLight bhl = null;
-    FractalLight flt = null;
-    SpotLight spli = null;
-    CircleTextureMaterial ctm = null;
-    SquaredMaterial sm = null;
-    SolidColorMaterial scm = null;
-    StripedMaterial stma = null;
-    RectangularPrism rp = null;
-    LambertMaterial lm = null;
-    TriangleMaterial trm = null;
-    CheckerboardMaterial cm = null;
-    TexturedCheckerboardMaterial tcimo = null;
-	GhostTextMaterial ghost = null;
-    DiamondMaterial diamond = null;
-    TexturedPhongMaterial tpma = null;
-    ThresholdMaterial thresold = null;
-    BrightnessMaterial brighto = null;
-    ContrastMaterial contrast = null;
-    SphereWordTextureMaterial spwordmat = null;
-    MosaicMaterial mosmat = null;
-    CrystalMaterial crysmat = null;
-    PolkaDotMaterial polkamat = null;
-    OrbitalMaterial orbit = null;
-    MultiMixMaterial multimix = null;
-    SuperBrightDebugMaterial sbdm = null;
-    ImageTextureMaterial itm = null;
-    MetallicMaterial mmt = null;
-    RoughMaterial romu = null;
-    RubyMaterial rubimo = null;
-    DielectricMaterial dielectric = null;
-    ObsidianMaterial obsidian = null;
-    EmeraldMaterial emerald = null;
-    EdgeLightColorMaterial edgelit = null;
-    InvertLightColorMaterial ilight = null;
-    PixelArtMaterial pam = null;
-    HolographicDiffractionMaterial hdm = null;
-    HolographicPBRMaterial hcpm = null;
-    ChromePBRMaterial chrpmt = null;
-    WaterPBRMaterial wpmcv = null;
-    BlackHoleMaterial bhm = null;
-    FractalBarkMaterial fbm = null;
-    StarfieldMaterial sfm = null;
-    ProceduralFlowerMaterial pfmtr = null;
-    DamaskCeramicMaterial dcm = null;
-    LavaFlowMaterial lfm = null;
-    WaterRippleMaterial wrm = null;
-    QuantumFieldMaterial qfm = null;
-    StainedGlassMaterial sgm = null;
-    RandomMaterial rmat = null;
-    PhongMaterial phm = null;
-    PhongTextMaterial ptomme = null;
-    HybridTextMaterial hibrid = null;
-	TransparentColorMaterial tecome = null;
-    PhongElenaMaterial pem = null;
-    GlassMaterial glsmat = null;
-    GoldPBRMaterial gpbrmat = null;
-    CeramicTilePBRMaterial ctpm = null;
-    GlassicTilePBRMaterial glptm = null;
-    SilverPBRMaterial silvom = null;
-    MarblePBRMaterial mbppp = null;
-    SolidCheckerboardMaterial nrcbm = null;
-    MarbleMaterial mbtt = null;
-    DewDropMaterial ddm = null;
-    HexagonalHoneycombMaterial hhcm = null;
-    OpticalIllusionMaterial oim = null;
-    Cube cube = null;
-    Cone cone = null;
-    TransparentPlane ptl = null;
-    Ellipsoid els = null;
-    Triangle tri = null;
-    Plane plane = null;
-    Cylinder cll = null;
-    Rectangle3D r3d = null;
-    Triangle tris = null;
-    Torus torus = null;
-    Box box = null;
-    TorusKnot toruskn = null;
-    Crescent ccr = null;
-    MaterialUtils mut = null;
-    ResizeImage rszz = null;
-    Hyperboloid hypb = null;
-    PBRCapableMaterial pbrcm = null;
-    PlasticPBRMaterial plasmat = null;
-    CopperPBRMaterial coppmat = null;
-    WoodPBRMaterial wpmt = null;
-    DiagonalCheckerMaterial dicem = null;
-    RectangleCheckerMaterial rcm = null;
-    DiffuseMaterial dmm = null;
-    CrystalClearMaterial ccm = null;
-    PlatinumMaterial plm = null;
-    WoodMaterial wmt = null;
-    ElenaTextureMaterial etm = null;
-    GradientTextMaterial grtm = null;
-    GradientImageTextMaterial gritm = null;
-    TurkishTileMaterial trtilem = null;
-    NorwegianRoseMaterial nwmat = null;
-    NordicWoodMaterial nomat = null;
-    CoffeeFjordMaterial cofij = null;
-    NorthernLightMaterial nilon = null;
-    CarpetTextureMaterial cetome = null;
-    AnodizedMetalMaterial anotem = null;
-    AnodizedTextMaterial anodizedWord = null;
-    AmberMaterial amber = null;
-    XRayMaterial xray = null;
-    ProceduralCloudMaterial procemo = null;
-    LinearGradientMaterial ligram = null;
-    RadialGradientMaterial radimat = null;
-    VikingMetalMaterial vkgmt = null;
-    TextDielectricMaterial tdiele = null;
-    TransparentEmojiMaterial trnsEmoj = null;
-    TransparentPNGMaterial tpng = null;
-    NonScaledTransparentPNGMaterial nonsctrns = null;
-    TransparentEmissivePNGMaterial tepng = null;
-    WordMaterial womat = null;
-    EmojiBillboard ebilbo = null;
-    HotCopperMaterial hocop = null;
-    NordicWeaveMaterial nqwmt = null;
-    RuneStoneMaterial rosom = null;
-    AuroraCeramicMaterial acome = null;
-    FjordCrystalMaterial fjome = null;
-    RosemalingMaterial risomel = null;
-    TelemarkPatternMaterial telemol = null;
-    BrunostCheeseMaterial buconi = null;
-    VikingRuneMaterial viruni = null;
-    KilimRosemalingMaterial kirose = null;
-    CalligraphyRuneMaterial callimo = null;
-    TulipFjordMaterial tjfo = null;
-    HamamSaunaMaterial hasuna = null;
-    SultanKingMaterial sukemat = null;
-    GradientChessMaterial gcm = null;
-    SmartGlassMaterial sglas = null;
-    HologramDataMaterial holdam = null;
-    WaterfallMaterial wemf = null;
-    PureWaterMaterial pwm = null;
-    ReflectiveMaterial refoma = null;
-    LightningMaterial ligoma = null;
-    FractalFireMaterial ffm = null;
-    NeutralMaterial nnm = null;
-    TextureMaterial timam = null;
-    ColorUtil cutil = null;
-    Letter3D l3d = null;
-    Image3D i3d = null;
-    
     // 1. Create Scene
     Scene scene = new Scene();
     
@@ -36342,6 +36314,30 @@ implements java.io.Serializable {
     super ();
   }
   
+  public Camera copy() {
+    Camera copy = new Camera();
+    
+    copy.cameraPosition = new Point3(this.cameraPosition.x, this.cameraPosition.y, this.cameraPosition.z);
+    copy.lookAt = new Point3(this.lookAt.x, this.lookAt.y, this.lookAt.z);
+    copy.upVector = new Vector3(this.upVector.x, this.upVector.y, this.upVector.z);
+    
+    copy.orthographic = this.orthographic;
+    copy.fov = this.fov;
+    copy.orthographicScale = this.orthographicScale;
+    copy.maxRecursionDepth = this.maxRecursionDepth;
+    
+    copy.isReflective = this.isReflective;
+    copy.isRefractive = this.isRefractive;
+    copy.shadowsEnabled = this.shadowsEnabled;
+    
+    copy.animationPoints = new Point3[] {
+        new Point3(this.animationPoints[0].x, this.animationPoints[0].y, this.animationPoints[0].z),
+        new Point3(this.animationPoints[1].x, this.animationPoints[1].y, this.animationPoints[1].z)
+    };
+    
+    return copy;
+  }
+
   @Override
   public String toString() {
     return "Camera mainCamera {\n" +
@@ -36666,7 +36662,7 @@ import net.elena.murat.lovert.*;
 import net.elena.murat.util.*;
 
 public class SceneParser {
-  private final Map<String, EMShape> shapes = new HashMap<>();
+  private final Map<String, EMShape> shapes = new LinkedHashMap<>();
   private final Map<String, Light> lights = new HashMap<>();
   private final java.util.List<EMShape> sceneShapes = new ArrayList<>();
   private final java.util.List<Light> sceneLights = new ArrayList<>();
@@ -37632,7 +37628,10 @@ public class ElenaRayTracerGUI extends JFrame {
           applyCameraSettings();
         }
     });
-    panel.add(getJLabel(""));
+    JLabel xylbl = getJLabel("Double click on renderPanel for xy info.");
+    xylbl.setForeground(Color.orange.darker());
+    xylbl.setFont(new Font("Arial", 3, 20));
+    panel.add(xylbl);
     panel.add(getJLabel(""));
     panel.add(applyBtn);
     
@@ -37926,8 +37925,25 @@ public class ElenaRayTracerGUI extends JFrame {
           Matrix4 xtrans = Matrix4.createMatrixFromString(val);
           
           shape.setTransform(xtrans);
+          
+          // MATERIAL TRANSFORM INVERSE UPDATE
+		  Material mat = shape.getMaterial();
+		  if (mat != null) {
+			mat.setObjectTransform(xtrans.inverse());
+		  }
+          
           Utilities.shapes.set(selected, shape);
           System.out.println("SHAPE WITH NEW TRANSFORM VALS: " + Utilities.shapes.get(selected));
+          
+          // RENDER PIPELINE RESET
+		  //Scene newScene = new Scene();
+		  //for (EMShape s : Utilities.shapes) newScene.addShape(s);
+		  //for (Light l : Utilities.lights) newScene.addLight(l);
+
+		  //currentTracer = new ElenaMuratRayTracer(newScene, width, height, bgColor);
+		  //currentTracer.setCamera(camera);
+		  //if (shadowColor != null) currentTracer.setShadowColor(shadowColor);
+          
           return;
         }
     });
@@ -37985,9 +38001,9 @@ public class ElenaRayTracerGUI extends JFrame {
           if (vals.length < 2) return;
           
           Matrix4 a1m = Matrix4.createMatrixFromString(vals[0]);
-          Matrix4 a2m = Matrix4.createMatrixFromString(vals[1]);
-          
+          Matrix4 a2m = Matrix4.createMatrixFromString(vals[1]);      
           shape.setAnimationTransforms(new Matrix4[]{a1m, a2m});
+          
           Utilities.shapes.set(selected, shape);
           System.out.println("SHAPE WITH NEW ANIM VALS: " + Utilities.shapes.get(selected));
           return;
@@ -38306,6 +38322,12 @@ public class ElenaRayTracerGUI extends JFrame {
         
         Matrix4 newTransform = Matrix4.add(baseTransform, scaledAnimT);
         shape.setTransform(newTransform);
+        
+        // OBJECT TRANSFORM UPDATE:
+		Material mat = shape.getMaterial();
+		if (mat != null) {
+			mat.setObjectTransform(newTransform.inverse());
+		}
       }
       
       for (int i = 0; i < Utilities.lights.size(); i++) {
@@ -38385,6 +38407,9 @@ public class ElenaRayTracerGUI extends JFrame {
         scene.addLight(l);
         System.out.println(Utilities.getShortName(l.toString()));
       }
+      
+      bgColor = Utilities.parseHexColor(bgColorField.getText());
+      shadowColor = Utilities.parseHexColor(shadowColorField.getText());
       
       ElenaMuratRayTracer tracer = new ElenaMuratRayTracer(scene, width, height, bgColor);
       if (camera != null) tracer.setCamera(camera);
@@ -38667,11 +38692,12 @@ public class ElenaRayTracerGUI extends JFrame {
     return cmp;
   }
   ///////////////
-  private final class RenderPanel extends JPanel {
+  private final class RenderPanel extends JPanel implements MouseListener {
     private BufferedImage bmg = null;
     
     private RenderPanel() {
       super(true);
+      addMouseListener(this);
     }
     
     private BufferedImage getBufferedImage() {
@@ -38691,6 +38717,39 @@ public class ElenaRayTracerGUI extends JFrame {
       
       return;
     }
+    
+    @Override
+	public void mouseClicked(MouseEvent e) {
+		if (e.getClickCount() != 2) return;
+		
+		int x = e.getX();
+		int y = e.getY();
+		
+		if (camera == null) camera = new Camera();
+		Camera cam = camera.copy();
+		
+		Point3 p = Utilities.pixelToWorld(x, y, width, height, cam);
+		String pstr = p.toString();
+		JOptionPane.showMessageDialog(renderPanel, "<html><body><b><font color=\"blue\" size=\"7\">" + pstr + "</font></b></body></html>");
+		
+		return;
+	}
+
+	@Override
+	public void mousePressed(MouseEvent e) {
+	}
+
+	@Override
+	public void mouseReleased(MouseEvent e) {
+	}
+
+	@Override
+	public void mouseEntered(MouseEvent e) {
+	}
+
+	@Override
+	public void mouseExited(MouseEvent e) {
+	}
   }
   
   // ——————— UTILS ———————
@@ -39051,47 +39110,30 @@ public class Utilities extends Object {
     public static final String[] MATERIAL_TYPES = {
     "CheckerboardMaterial", "EmissiveMaterial", "ImageTextureMaterial",
     "TextureMaterial", "TextDielectricMaterial", "SphereWordTextureMaterial", 
-    "LambertMaterial", "TransparentPNGMaterial", "AfricanKenteMaterial", 
-    "AmberMaterial", "AnisotropicMetalMaterial", "IsotropicMetalTextMaterial", 
-    "AnodizedMetalMaterial", "AnodizedTextMaterial", "AuroraCeramicMaterial", 
-    "BaklavaMaterial", "BlackHoleMaterial", "BrightnessMaterial", 
-    "BrunostCheeseMaterial", "CalligraphyRuneMaterial", "CarpetTextureMaterial", 
-    "CeramicTilePBRMaterial", "CiniMaterial", "CircleTextureMaterial", 
-    "ChromePBRMaterial", "CoffeeFjordMaterial", "ContrastMaterial", 
-    "CopperMaterial", "CopperPBRMaterial", "CrystalClearMaterial", 
-    "CrystalMaterial", "DamaskCeramicMaterial", "DewDropMaterial", 
-    "DiagonalCheckerMaterial", "DiamondMaterial", "DielectricMaterial", 
-    "DiffuseMaterial", "EdgeLightColorMaterial", "EmeraldMaterial", 
+    "LambertMaterial", "TransparentPNGMaterial", "WordMaterial", "IsotropicMetalTextMaterial",
+    "AfricanKenteMaterial", "AmberMaterial", "AnisotropicMetalMaterial", "AnodizedMetalMaterial", "AnodizedTextMaterial", "AuroraCeramicMaterial", 
+    "BaklavaMaterial", "BlackHoleMaterial", "BrightnessMaterial", "BrunostCheeseMaterial",
+    "CalligraphyRuneMaterial", "CarpetTextureMaterial", "CeramicTilePBRMaterial", "CiniMaterial", "CircleTextureMaterial", "ChromePBRMaterial", "CoffeeFjordMaterial", "ContrastMaterial", "CopperMaterial", "CopperPBRMaterial", "CrystalClearMaterial", "CrystalMaterial", 
+    "DamaskCeramicMaterial", "DewDropMaterial", "DiagonalCheckerMaterial", "DiamondMaterial", "DielectricMaterial", "DiffuseMaterial", 
+    "EdgeLightColorMaterial", "EmeraldMaterial", 
     "FjordCrystalMaterial", "FractalBarkMaterial", "FractalFireMaterial", 
-    "GhostTextMaterial", "GlassicTilePBRMaterial", "GlassMaterial", 
-    "GoldMaterial", "GoldPBRMaterial", "GradientChessMaterial", 
-    "GradientImageTextMaterial", "GradientTextMaterial", "GraniteMaterial", 
-    "HamamSaunaMaterial", "HexagonalHoneycombMaterial", "HokusaiMaterial", 
-    "HologramDataMaterial", "HolographicDiffractionMaterial", "HolographicPBRMaterial", 
-    "HotCopperMaterial", "HybridTextMaterial", "InvertLightColorMaterial", 
-    "KilimRosemalingMaterial", "LavaFlowMaterial", "LightningMaterial", 
-    "LinearGradientMaterial", "MarbleMaterial", "MarblePBRMaterial", 
-    "MetallicMaterial", "MirrorMaterial", "MoonSurfaceMaterial", 
-    "MosaicMaterial", "MultiMixMaterial", "NazarMaterial", 
-    "NeutralMaterial", "NonScaledTransparentPNGMaterial", "NordicWeaveMaterial", 
-    "NordicWoodMaterial", "NorthernLightMaterial", "NorwegianRoseMaterial", 
-    "OpticalIllusionMaterial", "OrbitalMaterial", "PhongElenaMaterial", 
-    "PhongMaterial", "PixelArtMaterial", "PlasticPBRMaterial", 
-    "PlatinumMaterial", "PolkaDotMaterial", "ProceduralCloudMaterial", 
-    "ProceduralFlowerMaterial", "PureWaterMaterial", "QuantumFieldMaterial", 
-    "RadialGradientMaterial", "RandomMaterial", "ReflectiveMaterial", 
-    "RosemalingMaterial", "RubyMaterial", "RuneStoneMaterial", 
-    "SalmonMaterial", "SandMaterial", "SilverMaterial", 
-    "SilverPBRMaterial", "SimitMaterial", "SolidCheckerboardMaterial", 
-    "SolidColorMaterial", "SquaredMaterial", "StainedGlassMaterial", 
-    "StarfieldMaterial", "StarryNightMaterial", "StripedMaterial", 
-    "SultanKingMaterial", "TelemarkPatternMaterial", "TexturedCheckerboardMaterial", 
-    "TexturedPhongMaterial", "TransparentEmissivePNGMaterial", "TransparentEmojiMaterial",
-    "TriangleMaterial", "TulipFjordMaterial", "TurkishTileMaterial", 
-    "TurkishDelightMaterial", "VikingMetalMaterial", "VikingRuneMaterial", 
-    "WaterfallMaterial", "WaterPBRMaterial", "WoodMaterial", 
-    "WoodPBRMaterial", "WoodGrainMaterial", "WordMaterial", 
-    "XRayMaterial", "CustomMaterial"
+    "GhostTextMaterial", "GlassicTilePBRMaterial", "GlassMaterial", "GoldMaterial", "GoldPBRMaterial", "GradientChessMaterial", "GradientImageTextMaterial", "GradientTextMaterial", "GraniteMaterial", 
+    "HamamSaunaMaterial", "HexagonalHoneycombMaterial", "HokusaiMaterial", "HologramDataMaterial", "HolographicDiffractionMaterial", "HolographicPBRMaterial", "HotCopperMaterial", "HybridTextMaterial", 
+    "InvertLightColorMaterial", 
+    "KilimRosemalingMaterial", 
+    "LavaFlowMaterial", "LightningMaterial", "LinearGradientMaterial", 
+    "MarbleMaterial", "MarblePBRMaterial", "MetallicMaterial", "MirrorMaterial", "MoonSurfaceMaterial", "MosaicMaterial", "MultiMixMaterial", 
+    "NazarMaterial", "NeutralMaterial", "NonScaledTransparentPNGMaterial", "NordicWeaveMaterial", "NordicWoodMaterial", "NorthernLightMaterial", "NorwegianRoseMaterial", 
+    "OpticalIllusionMaterial", "OrbitalMaterial", 
+    "PhongElenaMaterial", "PhongMaterial", "PixelArtMaterial", "PlasticPBRMaterial", "PlatinumMaterial", "PolkaDotMaterial", "ProceduralCloudMaterial", "ProceduralFlowerMaterial", "PureWaterMaterial", 
+    "QuantumFieldMaterial", 
+    "RadialGradientMaterial", "RandomMaterial", "ReflectiveMaterial", "RosemalingMaterial", "RubyMaterial", "RuneStoneMaterial", 
+    "SalmonMaterial", "SandMaterial", "SilverMaterial", "SilverPBRMaterial", "SimitMaterial", "SolidCheckerboardMaterial", "SolidColorMaterial", "SquaredMaterial", "StainedGlassMaterial", "StarfieldMaterial", "StarryNightMaterial", "StripedMaterial", "SultanKingMaterial", 
+    "TelemarkPatternMaterial", "TexturedCheckerboardMaterial", "TexturedPhongMaterial", "TransparentEmissivePNGMaterial", "TransparentEmojiMaterial", "TriangleMaterial", "TulipFjordMaterial", "TurkishTileMaterial", "TurkishDelightMaterial", 
+    "VikingMetalMaterial", "VikingRuneMaterial", 
+    "WaterfallMaterial", "WaterPBRMaterial", "WoodMaterial", "WoodPBRMaterial", "WoodGrainMaterial", 
+    "XRayMaterial", 
+    "CustomMaterial"
    };
 
     public static final String[] LIGHT_TYPES = {
@@ -39444,15 +39486,189 @@ public class Utilities extends Object {
 			case "WoodGrainMaterial": return "";
 			case "WoodMaterial": return "baseColor = #DEB887;\ngrainColor = #8B4513;\ngrainFrequency = 2.0;\nringVariation = 0.1;\nambientCoeff = 0.1;\ndiffuseCoeff = 0.7;\nspecularCoeff = 0.2;\nshininess = 32.0;\nreflectivity = 0.0;\nior = 1.0;\ntransparency = 0.0;\nobjectInverseTransform = null;";            
             case "WoodPBRMaterial": return "color1 = #DEB887;\ncolor2 = #8B4513;\ntileSize = 1.0;\nroughness = 0.5;\nspecularScale = 0.5;";
-			case "WordMaterial": return "imagePath = \"textures/turkeyFlag.png\";\ntext = \"VANN\";\nforegroundColor = #FFFFFF;\nbackgroundColor = #00000000;\nfontName = \"Arial\";\nfontSize = 48;\nfontStyle = 1;\nuseGradient = true;\ngradientColor = #00000000;\nwidth = 300;\nheight = 80;";            
-            case "XRayMaterial": return "baseColor = #00FFFF;\ntransparency = 0.8;\nreflectivity = 0.2;";
+			case "WordMaterial": return "text = \"Merhaba Sevgili Dostlar!\";\nforegroundColor = #FF0000;\nbackgroundColor = #00000000;\nfontName = \"Arial\";\nfontSize = 50;\nfontStyle = 1;\nuseGradient = true;\ngradientColor = #00DD00;\nwidth = 1000;\nheight = 80;\nuOffset = 0.0;\nvOffset = 0.0;\nbillboardWidth = 8.5;\nbillboardHeight = 1.5;";
+			case "XRayMaterial": return "baseColor = #00FFFF;\ntransparency = 0.8;\nreflectivity = 0.2;";
             case "CustomMaterial": return "className = extraSML/TestMaterial.class;";
             default: return "";
         }
     }
 
     // ——————— FACTORIES ———————
-
+    public static Light createLightFromText(String type, String text) {
+        try {
+            switch (type) {
+                case "BioluminescentLight": {
+					List<Point3> positions = parsePoints3(text, "positions");
+					Color col = parseColor(text, "color");
+					double ps = parseDouble(text, "pulseSpeed");
+					double bi = parseDouble(text, "baseIntensity");
+					double af = parseDouble(text, "attenuationFactor");
+					double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+					Light lg = new BioluminescentLight(positions, col, ps, bi, af);
+					lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+				} case "BlackHoleLight": {
+                    Point3 singularity = parsePoint3(text, "singularity");
+                    double radius = parseDouble(text, "radius");
+                    Color color = parseColor(text, "color");
+                    double intensity = parseDouble(text, "intensity");
+                    double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+                    Light lg = new BlackHoleLight(singularity, radius, color, intensity);
+                    lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+                } case "ElenaDirectionalLight": {
+                    Vector3 dir = parseVector3(text, "direction");
+                    Color color = parseColor(text, "color");
+                    double intensity = parseDouble(text, "intensity");
+                    double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+                    Light lg = new ElenaDirectionalLight(dir, color, intensity);
+                    lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+                } case "ElenaMuratAmbientLight": {
+                    Color color = parseColor(text, "color");
+                    double intensity = parseDouble(text, "intensity");
+                    double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+                    Light lg = new ElenaMuratAmbientLight(color, intensity);
+                    lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+                } case "FractalLight": {
+                    Point3 pos = parsePoint3(text, "position");
+                    Color color = parseColor(text, "color");
+                    double intensity = parseDouble(text, "intensity");
+                    if (text.contains("octaves")) {
+                        int octaves = parseInt(text, "octaves");
+                        double persistence = parseDouble(text, "persistence");
+                        double frequency = parseDouble(text, "frequency");
+                        double dx = parseDouble(text, "firstAnimationIntensity");
+					    double dy = parseDouble(text, "secondAnimationIntensity");
+                        Light lg = new FractalLight(pos, color, intensity, octaves, persistence, frequency);
+                        lg.setIncDecIntensity(new double[]{dx, dy});
+					    return lg;
+                    } else {
+						double dx = 0.0;
+						double dy = 0.0;
+                        Light lg = new FractalLight(pos, color, intensity);
+                        lg.setIncDecIntensity(new double[]{dx, dy});
+					    return lg;
+                    }
+                } case "MuratPointLight": {
+					Point3 position = parsePoint3(text, "position");
+					Color color = parseColor(text, "color");
+					double intensity = parseDouble(text, "intensity");
+					double constantAttenuation = parseDouble(text, "constantAttenuation");
+					double linearAttenuation = parseDouble(text, "linearAttenuation");
+					double quadraticAttenuation = parseDouble(text, "quadraticAttenuation");
+					double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+					Light lg = new MuratPointLight(position, color, intensity, constantAttenuation, linearAttenuation, quadraticAttenuation);
+				    lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+				} case "PulsatingPointLight": {
+                    Point3 initialPos = parsePoint3(text, "initialPosition");
+                    Color baseColor = parseColor(text, "baseColor");
+                    double baseIntensity = parseDouble(text, "baseIntensity");
+                    double pulsationSpeed = parseDouble(text, "pulsationSpeed");
+                    double movementSpeed = parseDouble(text, "movementSpeed");
+                    double movementAmplitude = parseDouble(text, "movementAmplitude");
+                    if (text.contains("constantAttenuation")) {
+                        double c = parseDouble(text, "constantAttenuation");
+                        double l = parseDouble(text, "linearAttenuation");
+                        double q = parseDouble(text, "quadraticAttenuation");
+                        double dx = parseDouble(text, "firstAnimationIntensity");
+					    double dy = parseDouble(text, "secondAnimationIntensity");
+                        Light lg = new PulsatingPointLight(initialPos, baseColor, baseIntensity, pulsationSpeed, movementSpeed, movementAmplitude, c, l, q);
+                        lg.setIncDecIntensity(new double[]{dx, dy});
+					    return lg;
+                    } else {
+						double dx = 0.0;
+						double dy = 0.0;
+                        Light lg = new PulsatingPointLight(initialPos, baseColor, baseIntensity, pulsationSpeed, movementSpeed, movementAmplitude);
+                        lg.setIncDecIntensity(new double[]{dx, dy});
+					    return lg;
+                    }
+                } case "SpotLight": {
+                    Point3 position = parsePoint3(text, "position");
+                    Vector3 direction = parseVector3(text, "direction");
+                    Color color = parseColor(text, "color");
+                    double intensity = parseDouble(text, "intensity");
+                    double inner = parseDouble(text, "innerConeAngle");
+                    double outer = parseDouble(text, "outerConeAngle");
+                    if (text.contains("constantAttenuation")) {
+                        double c = parseDouble(text, "constantAttenuation");
+                        double l = parseDouble(text, "linearAttenuation");
+                        double q = parseDouble(text, "quadraticAttenuation");
+                        double dx = parseDouble(text, "firstAnimationIntensity");
+					    double dy = parseDouble(text, "secondAnimationIntensity");
+                        Light lg = new SpotLight(position, direction, color, intensity, inner, outer, c, l, q);
+                        lg.setIncDecIntensity(new double[]{dx, dy});
+					    return lg;
+                    } else {
+						double dx = 0.0;
+						double dy = 0.0;
+                        Light lg = new SpotLight(position, direction, color, intensity, inner, outer);
+                        lg.setIncDecIntensity(new double[]{dx, dy});
+					    return lg;
+                    }
+                } case "SphereLight": {
+					Point3 position = parsePoint3(text, "position");
+					Color color = parseColor(text, "color");
+					double intensity = parseDouble(text, "intensity");
+					double radius = parseDouble(text, "radius");
+					double sampleCount = parseDouble(text, "sampleCount");
+					double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+					Light lg = new SphereLight(position, radius, color, intensity, (int)sampleCount);
+					lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+				} case "TubeLight": {
+					Point3 position = parsePoint3(text, "position");
+					Color color = parseColor(text, "color");
+					double intensity = parseDouble(text, "intensity");
+					Point3 startPoint = parsePoint3(text, "startPoint");
+					Point3 endPoint = parsePoint3(text, "endPoint");
+					double radius = parseDouble(text, "radius");
+					double length = parseDouble(text, "length");
+					double sampleCount = parseDouble(text, "sampleCount");
+					double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+					Light lg = new TubeLight(startPoint, endPoint, radius, color, intensity, (int)sampleCount);
+					lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+				} case "AreaLight": {
+					Point3 position = parsePoint3(text, "position");
+					Color color = parseColor(text, "color");
+					double intensity = parseDouble(text, "intensity");
+					Vector3 normal = parseVector3(text, "normal");
+					double width = parseDouble(text, "width");
+					double height = parseDouble(text, "height");
+					double samplesU = parseDouble(text, "samplesU");
+					double samplesV = parseDouble(text, "samplesV");
+					double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+					Light lg = new AreaLight(position, normal, width, height, color, intensity, (int)samplesU, (int)samplesV);
+					lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+				} case "CustomLight": {
+					double dx = parseDouble(text, "firstAnimationIntensity");
+					double dy = parseDouble(text, "secondAnimationIntensity");
+					String path = parseString(text, "className");
+					Light lg = (Utilities.loadCustomLight(path));
+					lg.setIncDecIntensity(new double[]{dx, dy});
+					return lg;
+				}
+                default:
+                    return new MuratPointLight(new Point3(5,5,5), Color.WHITE, 1.0);
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(pane, "Light parse error: " + e.getMessage());
+            return new MuratPointLight(new Point3(5,5,5), Color.WHITE, 1.0);
+        }
+    }
+    
     public static EMShape createShapeFromText(String type, String text) {
         try {
             switch (type) {
@@ -39643,167 +39859,6 @@ public class Utilities extends Object {
             return null;
         }
     }
-
-///////////
-/**
- * Universal MultiMixMaterial parser for CSG - PROPERLY PARSES USER INPUT
- */
-private static Material parseMultiMixMaterialForCSG(String materialType, String materialBlock) {
-    try {
-        System.out.println("=== UNIVERSAL MULTIMIX PARSER ===");
-        
-        // Find the materials array content
-        int materialsStart = materialBlock.indexOf('[');
-        int materialsEnd = materialBlock.indexOf(']', materialsStart);
-        if (materialsStart == -1 || materialsEnd == -1) {
-            throw new IllegalArgumentException("Invalid materials array format");
-        }
-        
-        String materialsContent = materialBlock.substring(materialsStart + 1, materialsEnd).trim();
-        
-        // Find the ratios array content  
-        int ratiosStart = materialBlock.indexOf('[', materialsEnd + 1);
-        int ratiosEnd = materialBlock.indexOf(']', ratiosStart);
-        if (ratiosStart == -1 || ratiosEnd == -1) {
-            throw new IllegalArgumentException("Invalid ratios array format");
-        }
-        
-        String ratiosContent = materialBlock.substring(ratiosStart + 1, ratiosEnd).trim();
-        
-        System.out.println("Materials content: " + materialsContent);
-        System.out.println("Ratios content: " + ratiosContent);
-        
-        // Parse individual materials
-        java.util.List<Material> materials = new ArrayList<>();
-        String remainingMaterials = materialsContent;
-        
-        while (!remainingMaterials.trim().isEmpty()) {
-            // Find next material type
-            int materialTypeStart = -1;
-            int materialTypeEnd = -1;
-            
-            for (int i = 0; i < remainingMaterials.length(); i++) {
-                if (Character.isUpperCase(remainingMaterials.charAt(i))) {
-                    materialTypeStart = i;
-                    // Find the end of material type (until space or {)
-                    for (int j = i + 1; j < remainingMaterials.length(); j++) {
-                        char c = remainingMaterials.charAt(j);
-                        if (c == ' ' || c == '{') {
-                            materialTypeEnd = j;
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-            
-            if (materialTypeStart == -1) break;
-            
-            String currentMaterialType = remainingMaterials.substring(materialTypeStart, materialTypeEnd).trim();
-            System.out.println("Found material type: " + currentMaterialType);
-            
-            // Find the material block
-            int blockStart = remainingMaterials.indexOf('{', materialTypeEnd);
-            if (blockStart == -1) break;
-            
-            int blockEnd = findMatchingBracket(remainingMaterials, blockStart);
-            if (blockEnd == -1) break;
-            
-            // Extract the complete material definition
-            String materialDefinition = remainingMaterials.substring(materialTypeStart, blockEnd + 1).trim();
-            System.out.println("Material definition: " + materialDefinition.substring(0, Math.min(100, materialDefinition.length())));
-            
-			// Parse this individual material
-			Material material = null;
-			if ("MultiMixMaterial".equals(currentMaterialType)) {
-				// New recursive method
-				material = parseMultiMixMaterialWithoutDialog(materialDefinition);
-			} else {
-				material = createMaterialFromText(currentMaterialType, materialDefinition);
-			}
-            
-            if (material != null) {
-                materials.add(material);
-                System.out.println("Successfully parsed: " + currentMaterialType);
-            } else {
-                System.err.println("Failed to parse: " + currentMaterialType);
-                materials.add(new DiffuseMaterial(Color.GRAY));
-            }
-            
-            // Move to next material
-            remainingMaterials = remainingMaterials.substring(blockEnd + 1).trim();
-            // Skip comma if present
-            if (remainingMaterials.startsWith(",")) {
-                remainingMaterials = remainingMaterials.substring(1).trim();
-            }
-        }
-        
-        // Parse ratios
-        String[] ratioStrings = ratiosContent.split(",");
-        double[] ratios = new double[ratioStrings.length];
-        
-        for (int i = 0; i < ratioStrings.length; i++) {
-            ratios[i] = Double.parseDouble(ratioStrings[i].trim());
-        }
-        
-        // Validate counts
-        if (materials.size() != ratios.length) {
-            System.err.println("Warning: Materials count (" + materials.size() + ") doesn't match ratios count (" + ratios.length + ")");
-            System.out.println("Returning Checkerboard Material...");
-            return CHECKER;
-            // Adjust to smaller count
-            //int minCount = Math.min(materials.size(), ratios.length);
-            //Material[] finalMaterials = new Material[minCount];
-            //double[] finalRatios = new double[minCount];
-            
-            //System.arraycopy(materials.toArray(new Material[0]), 0, finalMaterials, 0, minCount);
-            //System.arraycopy(ratios, 0, finalRatios, 0, minCount);
-            
-            // Normalize ratios
-            //double total = 0;
-            //for (double ratio : finalRatios) total += ratio;
-            //for (int i = 0; i < finalRatios.length; i++) finalRatios[i] /= total;
-            
-            //materials = java.util.Arrays.asList(finalMaterials);
-            //ratios = finalRatios;
-        }
-        
-        MultiMixMaterial multiMix = new MultiMixMaterial(
-            materials.toArray(new Material[0]), 
-            ratios
-        );
-        
-        System.out.println("=== UNIVERSAL MULTIMIX CREATED SUCCESSFULLY ===");
-        System.out.println("Materials: " + materials.size() + ", Ratios: " + java.util.Arrays.toString(ratios));
-        return multiMix;
-        
-    } catch (Exception e) {
-        System.err.println("Universal MultiMix parse error: " + e.getMessage());
-        e.printStackTrace();
-        
-        // Fallback: Create a simple MultiMix so the scene at least loads
-        Material[] fallbackMaterials = {
-            new DiffuseMaterial(Color.RED),
-            new DiffuseMaterial(Color.BLUE)
-        };
-        double[] fallbackRatios = {0.5, 0.5};
-        return new MultiMixMaterial(fallbackMaterials, fallbackRatios);
-    }
-}
-
-private static int findMatchingBracket(String text, int startIndex) {
-    if (startIndex < 0 || startIndex >= text.length()) return -1;
-    
-    int count = 1;
-    for (int i = startIndex + 1; i < text.length(); i++) {
-        char c = text.charAt(i);
-        if (c == '{') count++;
-        if (c == '}') count--;
-        if (count == 0) return i;
-    }
-    return -1;
-}
-//////////
 
     public static Material createMaterialFromText(String type, String text) {
         try {
@@ -41005,7 +41060,6 @@ private static int findMatchingBracket(String text, int startIndex) {
                     double spec = parseDouble(text, "specularScale");
                     return new WoodPBRMaterial(c1, c2, tileSize, rough, spec);
                 } case "WordMaterial": {
-					String imagePath = parseString(text, "imagePath");
 					String textStr = parseString(text, "text");
 					Color fg = parseColor(text, "foregroundColor");
 					Color bg = parseColor(text, "backgroundColor");
@@ -41016,14 +41070,18 @@ private static int findMatchingBracket(String text, int startIndex) {
 					Color gradientColor = parseColor(text, "gradientColor");
 					int width = parseInt(text, "width");
 					int height = parseInt(text, "height");
-    
+					double uOffset = parseDouble(text, "uOffset");
+					double vOffset = parseDouble(text, "vOffset");
+					double billboardWidth = parseDouble(text, "billboardWidth");
+					double billboardHeight = parseDouble(text, "billboardHeight");
+					
 					Font font = new Font(fontName, fontStyle, fontSize);
-					BufferedImage wordImage = loadImage(imagePath);
     
-					// Tüm parametreleri constructor'a geç
-					WordMaterial mw = new WordMaterial(textStr, fg, bg, font, useGradient, gradientColor, wordImage, width, height);
-					mw.setImagePath(imagePath);
-					return mw;           
+					// Yeni full constructor ile UV offset desteği
+					WordMaterial mw = new WordMaterial(textStr, fg, bg, font, useGradient, gradientColor, null, width, height, uOffset, vOffset);
+					mw.setBillboardWidth(billboardWidth);
+					mw.setBillboardHeight(billboardHeight);
+					return mw;
 				} case "XRayMaterial": {
                     Color base = parseColor(text, "baseColor");
                     double trans = parseDouble(text, "transparency");
@@ -41042,180 +41100,166 @@ private static int findMatchingBracket(String text, int startIndex) {
         }
     }
 
-    public static Light createLightFromText(String type, String text) {
-        try {
-            switch (type) {
-                case "BioluminescentLight": {
-					List<Point3> positions = parsePoints3(text, "positions");
-					Color col = parseColor(text, "color");
-					double ps = parseDouble(text, "pulseSpeed");
-					double bi = parseDouble(text, "baseIntensity");
-					double af = parseDouble(text, "attenuationFactor");
-					double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-					Light lg = new BioluminescentLight(positions, col, ps, bi, af);
-					lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-				} case "BlackHoleLight": {
-                    Point3 singularity = parsePoint3(text, "singularity");
-                    double radius = parseDouble(text, "radius");
-                    Color color = parseColor(text, "color");
-                    double intensity = parseDouble(text, "intensity");
-                    double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-                    Light lg = new BlackHoleLight(singularity, radius, color, intensity);
-                    lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-                } case "ElenaDirectionalLight": {
-                    Vector3 dir = parseVector3(text, "direction");
-                    Color color = parseColor(text, "color");
-                    double intensity = parseDouble(text, "intensity");
-                    double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-                    Light lg = new ElenaDirectionalLight(dir, color, intensity);
-                    lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-                } case "ElenaMuratAmbientLight": {
-                    Color color = parseColor(text, "color");
-                    double intensity = parseDouble(text, "intensity");
-                    double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-                    Light lg = new ElenaMuratAmbientLight(color, intensity);
-                    lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-                } case "FractalLight": {
-                    Point3 pos = parsePoint3(text, "position");
-                    Color color = parseColor(text, "color");
-                    double intensity = parseDouble(text, "intensity");
-                    if (text.contains("octaves")) {
-                        int octaves = parseInt(text, "octaves");
-                        double persistence = parseDouble(text, "persistence");
-                        double frequency = parseDouble(text, "frequency");
-                        double dx = parseDouble(text, "firstAnimationIntensity");
-					    double dy = parseDouble(text, "secondAnimationIntensity");
-                        Light lg = new FractalLight(pos, color, intensity, octaves, persistence, frequency);
-                        lg.setIncDecIntensity(new double[]{dx, dy});
-					    return lg;
-                    } else {
-						double dx = 0.0;
-						double dy = 0.0;
-                        Light lg = new FractalLight(pos, color, intensity);
-                        lg.setIncDecIntensity(new double[]{dx, dy});
-					    return lg;
-                    }
-                } case "MuratPointLight": {
-					Point3 position = parsePoint3(text, "position");
-					Color color = parseColor(text, "color");
-					double intensity = parseDouble(text, "intensity");
-					double constantAttenuation = parseDouble(text, "constantAttenuation");
-					double linearAttenuation = parseDouble(text, "linearAttenuation");
-					double quadraticAttenuation = parseDouble(text, "quadraticAttenuation");
-					double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-					Light lg = new MuratPointLight(position, color, intensity, constantAttenuation, linearAttenuation, quadraticAttenuation);
-				    lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-				} case "PulsatingPointLight": {
-                    Point3 initialPos = parsePoint3(text, "initialPosition");
-                    Color baseColor = parseColor(text, "baseColor");
-                    double baseIntensity = parseDouble(text, "baseIntensity");
-                    double pulsationSpeed = parseDouble(text, "pulsationSpeed");
-                    double movementSpeed = parseDouble(text, "movementSpeed");
-                    double movementAmplitude = parseDouble(text, "movementAmplitude");
-                    if (text.contains("constantAttenuation")) {
-                        double c = parseDouble(text, "constantAttenuation");
-                        double l = parseDouble(text, "linearAttenuation");
-                        double q = parseDouble(text, "quadraticAttenuation");
-                        double dx = parseDouble(text, "firstAnimationIntensity");
-					    double dy = parseDouble(text, "secondAnimationIntensity");
-                        Light lg = new PulsatingPointLight(initialPos, baseColor, baseIntensity, pulsationSpeed, movementSpeed, movementAmplitude, c, l, q);
-                        lg.setIncDecIntensity(new double[]{dx, dy});
-					    return lg;
-                    } else {
-						double dx = 0.0;
-						double dy = 0.0;
-                        Light lg = new PulsatingPointLight(initialPos, baseColor, baseIntensity, pulsationSpeed, movementSpeed, movementAmplitude);
-                        lg.setIncDecIntensity(new double[]{dx, dy});
-					    return lg;
-                    }
-                } case "SpotLight": {
-                    Point3 position = parsePoint3(text, "position");
-                    Vector3 direction = parseVector3(text, "direction");
-                    Color color = parseColor(text, "color");
-                    double intensity = parseDouble(text, "intensity");
-                    double inner = parseDouble(text, "innerConeAngle");
-                    double outer = parseDouble(text, "outerConeAngle");
-                    if (text.contains("constantAttenuation")) {
-                        double c = parseDouble(text, "constantAttenuation");
-                        double l = parseDouble(text, "linearAttenuation");
-                        double q = parseDouble(text, "quadraticAttenuation");
-                        double dx = parseDouble(text, "firstAnimationIntensity");
-					    double dy = parseDouble(text, "secondAnimationIntensity");
-                        Light lg = new SpotLight(position, direction, color, intensity, inner, outer, c, l, q);
-                        lg.setIncDecIntensity(new double[]{dx, dy});
-					    return lg;
-                    } else {
-						double dx = 0.0;
-						double dy = 0.0;
-                        Light lg = new SpotLight(position, direction, color, intensity, inner, outer);
-                        lg.setIncDecIntensity(new double[]{dx, dy});
-					    return lg;
-                    }
-                } case "SphereLight": {
-					Point3 position = parsePoint3(text, "position");
-					Color color = parseColor(text, "color");
-					double intensity = parseDouble(text, "intensity");
-					double radius = parseDouble(text, "radius");
-					double sampleCount = parseDouble(text, "sampleCount");
-					double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-					Light lg = new SphereLight(position, radius, color, intensity, (int)sampleCount);
-					lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-				} case "TubeLight": {
-					Point3 position = parsePoint3(text, "position");
-					Color color = parseColor(text, "color");
-					double intensity = parseDouble(text, "intensity");
-					Point3 startPoint = parsePoint3(text, "startPoint");
-					Point3 endPoint = parsePoint3(text, "endPoint");
-					double radius = parseDouble(text, "radius");
-					double length = parseDouble(text, "length");
-					double sampleCount = parseDouble(text, "sampleCount");
-					double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-					Light lg = new TubeLight(startPoint, endPoint, radius, color, intensity, (int)sampleCount);
-					lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-				} case "AreaLight": {
-					Point3 position = parsePoint3(text, "position");
-					Color color = parseColor(text, "color");
-					double intensity = parseDouble(text, "intensity");
-					Vector3 normal = parseVector3(text, "normal");
-					double width = parseDouble(text, "width");
-					double height = parseDouble(text, "height");
-					double samplesU = parseDouble(text, "samplesU");
-					double samplesV = parseDouble(text, "samplesV");
-					double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-					Light lg = new AreaLight(position, normal, width, height, color, intensity, (int)samplesU, (int)samplesV);
-					lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-				} case "CustomLight": {
-					double dx = parseDouble(text, "firstAnimationIntensity");
-					double dy = parseDouble(text, "secondAnimationIntensity");
-					String path = parseString(text, "className");
-					Light lg = (Utilities.loadCustomLight(path));
-					lg.setIncDecIntensity(new double[]{dx, dy});
-					return lg;
-				}
-                default:
-                    return new MuratPointLight(new Point3(5,5,5), Color.WHITE, 1.0);
-            }
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(pane, "Light parse error: " + e.getMessage());
-            return new MuratPointLight(new Point3(5,5,5), Color.WHITE, 1.0);
+///////////
+/**
+ * Universal MultiMixMaterial parser for CSG - PROPERLY PARSES USER INPUT
+ */
+private static Material parseMultiMixMaterialForCSG(String materialType, String materialBlock) {
+    try {
+        System.out.println("=== UNIVERSAL MULTIMIX PARSER ===");
+        
+        // Find the materials array content
+        int materialsStart = materialBlock.indexOf('[');
+        int materialsEnd = materialBlock.indexOf(']', materialsStart);
+        if (materialsStart == -1 || materialsEnd == -1) {
+            throw new IllegalArgumentException("Invalid materials array format");
         }
+        
+        String materialsContent = materialBlock.substring(materialsStart + 1, materialsEnd).trim();
+        
+        // Find the ratios array content  
+        int ratiosStart = materialBlock.indexOf('[', materialsEnd + 1);
+        int ratiosEnd = materialBlock.indexOf(']', ratiosStart);
+        if (ratiosStart == -1 || ratiosEnd == -1) {
+            throw new IllegalArgumentException("Invalid ratios array format");
+        }
+        
+        String ratiosContent = materialBlock.substring(ratiosStart + 1, ratiosEnd).trim();
+        
+        System.out.println("Materials content: " + materialsContent);
+        System.out.println("Ratios content: " + ratiosContent);
+        
+        // Parse individual materials
+        java.util.List<Material> materials = new ArrayList<>();
+        String remainingMaterials = materialsContent;
+        
+        while (!remainingMaterials.trim().isEmpty()) {
+            // Find next material type
+            int materialTypeStart = -1;
+            int materialTypeEnd = -1;
+            
+            for (int i = 0; i < remainingMaterials.length(); i++) {
+                if (Character.isUpperCase(remainingMaterials.charAt(i))) {
+                    materialTypeStart = i;
+                    // Find the end of material type (until space or {)
+                    for (int j = i + 1; j < remainingMaterials.length(); j++) {
+                        char c = remainingMaterials.charAt(j);
+                        if (c == ' ' || c == '{') {
+                            materialTypeEnd = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (materialTypeStart == -1) break;
+            
+            String currentMaterialType = remainingMaterials.substring(materialTypeStart, materialTypeEnd).trim();
+            System.out.println("Found material type: " + currentMaterialType);
+            
+            // Find the material block
+            int blockStart = remainingMaterials.indexOf('{', materialTypeEnd);
+            if (blockStart == -1) break;
+            
+            int blockEnd = findMatchingBracket(remainingMaterials, blockStart);
+            if (blockEnd == -1) break;
+            
+            // Extract the complete material definition
+            String materialDefinition = remainingMaterials.substring(materialTypeStart, blockEnd + 1).trim();
+            System.out.println("Material definition: " + materialDefinition.substring(0, Math.min(100, materialDefinition.length())));
+            
+			// Parse this individual material
+			Material material = null;
+			if ("MultiMixMaterial".equals(currentMaterialType)) {
+				// New recursive method
+				material = parseMultiMixMaterialWithoutDialog(materialDefinition);
+			} else {
+				material = createMaterialFromText(currentMaterialType, materialDefinition);
+			}
+            
+            if (material != null) {
+                materials.add(material);
+                System.out.println("Successfully parsed: " + currentMaterialType);
+            } else {
+                System.err.println("Failed to parse: " + currentMaterialType);
+                materials.add(new DiffuseMaterial(Color.GRAY));
+            }
+            
+            // Move to next material
+            remainingMaterials = remainingMaterials.substring(blockEnd + 1).trim();
+            // Skip comma if present
+            if (remainingMaterials.startsWith(",")) {
+                remainingMaterials = remainingMaterials.substring(1).trim();
+            }
+        }
+        
+        // Parse ratios
+        String[] ratioStrings = ratiosContent.split(",");
+        double[] ratios = new double[ratioStrings.length];
+        
+        for (int i = 0; i < ratioStrings.length; i++) {
+            ratios[i] = Double.parseDouble(ratioStrings[i].trim());
+        }
+        
+        // Validate counts
+        if (materials.size() != ratios.length) {
+            System.err.println("Warning: Materials count (" + materials.size() + ") doesn't match ratios count (" + ratios.length + ")");
+            System.out.println("Returning Checkerboard Material...");
+            return CHECKER;
+            // Adjust to smaller count
+            //int minCount = Math.min(materials.size(), ratios.length);
+            //Material[] finalMaterials = new Material[minCount];
+            //double[] finalRatios = new double[minCount];
+            
+            //System.arraycopy(materials.toArray(new Material[0]), 0, finalMaterials, 0, minCount);
+            //System.arraycopy(ratios, 0, finalRatios, 0, minCount);
+            
+            // Normalize ratios
+            //double total = 0;
+            //for (double ratio : finalRatios) total += ratio;
+            //for (int i = 0; i < finalRatios.length; i++) finalRatios[i] /= total;
+            
+            //materials = java.util.Arrays.asList(finalMaterials);
+            //ratios = finalRatios;
+        }
+        
+        MultiMixMaterial multiMix = new MultiMixMaterial(
+            materials.toArray(new Material[0]), 
+            ratios
+        );
+        
+        System.out.println("=== UNIVERSAL MULTIMIX CREATED SUCCESSFULLY ===");
+        System.out.println("Materials: " + materials.size() + ", Ratios: " + java.util.Arrays.toString(ratios));
+        return multiMix;
+        
+    } catch (Exception e) {
+        System.err.println("Universal MultiMix parse error: " + e.getMessage());
+        e.printStackTrace();
+        
+        // Fallback: Create a simple MultiMix so the scene at least loads
+        Material[] fallbackMaterials = {
+            new DiffuseMaterial(Color.RED),
+            new DiffuseMaterial(Color.BLUE)
+        };
+        double[] fallbackRatios = {0.5, 0.5};
+        return new MultiMixMaterial(fallbackMaterials, fallbackRatios);
     }
+}
+
+private static int findMatchingBracket(String text, int startIndex) {
+    if (startIndex < 0 || startIndex >= text.length()) return -1;
+    
+    int count = 1;
+    for (int i = startIndex + 1; i < text.length(); i++) {
+        char c = text.charAt(i);
+        if (c == '{') count++;
+        if (c == '}') count--;
+        if (count == 0) return i;
+    }
+    return -1;
+}
+//////////
 
     // ——————— UTILS ———————
 private static Matrix4 parseTransformFromBlock(String block) {
@@ -41977,6 +42021,53 @@ private static EMShape createCSGShape(String csgType, EMShape left, EMShape righ
         default:
             System.err.println("Unknown CSG type: " + csgType);
             return null;
+    }
+}
+
+public static Point3 pixelToWorld(int pixelX, int pixelY, int screenWidth, int screenHeight, Camera camera) {
+    // Camera vectors
+    Vector3 gaze = camera.getLookAt().minus(camera.getCameraPosition()).toVector().normalize();
+    Vector3 u = camera.getUpVector().cross(gaze).normalize();
+    Vector3 v = gaze.cross(u).normalize();
+    
+    // View plane parameters
+    double aspectRatio = (double) screenWidth / screenHeight;
+    double distance;
+    
+    // Perspektif projektion
+    if (camera.getFov() <= 0) {
+        distance = 1.0;
+    } else {
+        distance = 1.0 / Math.tan(Math.toRadians(camera.getFov()) / 2.0);
+    }
+    
+    // Pixel coordinates [-1, 1] normalize
+    //double ndcX = (2.0 * pixelX / (screenWidth - 1)) - 1.0;
+    double ndcX = 1.0 - (2.0 * pixelX / (screenWidth - 1)); // X reves
+    double ndcY = 1.0 - (2.0 * pixelY / (screenHeight - 1));
+    
+    // Aspect ratio
+    ndcX *= aspectRatio;
+    
+    Point3 cameraPosition = camera.getCameraPosition();
+    
+    // Point3.add()
+    Point3 imagePoint = cameraPosition.add(u.times(ndcX))
+                                     .add(v.times(ndcY))
+                                     .add(gaze.times(distance));
+    
+    // Point3 to Vector3 and normalize
+    Vector3 rayDirection = imagePoint.minus(cameraPosition).toVector().normalize();
+    
+    if (Math.abs(rayDirection.z) > 1e-6) {
+        double t = -cameraPosition.z / rayDirection.z;
+        return new Point3(
+            cameraPosition.x + rayDirection.x * t,
+            cameraPosition.y + rayDirection.y * t,
+            0.0
+        );
+    } else {
+        return imagePoint;
     }
 }
 

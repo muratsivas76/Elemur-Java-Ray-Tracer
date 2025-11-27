@@ -3,8 +3,8 @@ import java.util.*;
 
 public class AllJavaFilesCollector {
   public static void main(String[] args) {
-    String srcDir = "/home/muratsivas76/istasyon/java/extended_elemurrt/src";
-    String outFile = "/home/muratsivas76/istasyon/java/extended_elemurrt/tool/cds/files_all.txt";
+    String srcDir = "/home/muratsivas76/istasyon/java/extended_elemurrt_v2/src";
+    String outFile = "/home/muratsivas76/istasyon/java/extended_elemurrt_v2/tool/cds/files_all.txt";
     
     try (BufferedWriter writer = new BufferedWriter(new FileWriter(outFile))) {
       writer.write("// Collected Java Source Files\n");

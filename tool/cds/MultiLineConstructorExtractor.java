@@ -3,8 +3,8 @@ import java.util.*;
 
 public class MultiLineConstructorExtractor {
     public static void main(String[] args) {
-        String srcDir = "/home/muratsivas76/istasyon/java/extended_elemurrt/src";
-        String outFile = "/home/muratsivas76/istasyon/java/extended_elemurrt/tool/cds/constructors.txt";
+        String srcDir = "/home/muratsivas76/istasyon/java/extended_elemurrt_v2/src";
+        String outFile = "/home/muratsivas76/istasyon/java/extended_elemurrt_v2/tool/cds/constructors.txt";
         
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(outFile))) {
             processJavaFiles(new File(srcDir), writer, srcDir);
