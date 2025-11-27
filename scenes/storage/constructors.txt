@@ -176,6 +176,15 @@ public WordMaterial(String text, Color foregroundColor, Color backgroundColor, F
 public WordMaterial(String text, Color foregroundColor, Color backgroundColor, Font font, int width, int height);
 
 /net/elena/murat/material/WordMaterial.java:
+public WordMaterial(String sentence, Color textColor, Font sentenceFont, int maxWidth, double uOffset, double vOffset);
+
+/net/elena/murat/material/WordMaterial.java:
+public WordMaterial(String[] lines, Color textColor, Font sentenceFont, int maxWidth, double uOffset, double vOffset);
+
+/net/elena/murat/material/WordMaterial.java:
+public WordMaterial(String text, Color foregroundColor, Color backgroundColor, Font font, boolean useGradient, Color gradientColor, BufferedImage wordImage, int width, int height, double uOffset, double vOffset);
+
+/net/elena/murat/material/WordMaterial.java:
 public WordMaterial(String text, Color foregroundColor, Color backgroundColor, Font font, boolean useGradient, Color gradientColor, BufferedImage wordImage, int width, int height);
 
 /net/elena/murat/material/RadialGradientMaterial.java:
