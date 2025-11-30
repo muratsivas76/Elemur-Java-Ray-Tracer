@@ -1,0 +1,20 @@
+Width: 1024
+Height: 512
+Output: merhaba.png
+Bg argb: #00000000
+Border: no
+Border color argb: #ffff0000
+Alpha composite: 3, 1f
+Image path,x,y,w,h: ../textures/turkeyFlag.png, 256, 64, 512, 256
+Fg1 argb: #ffff0000
+Fg2 argb: #ff00dd00
+Fg1 xy: 0, 0
+Fg2 xy: 70, 30
+Font: Arial, 3, 200
+Shadow: yes
+Shadow color argb: #220000aa
+Shadow Inc, depth: 0.4f, 30
+Alpha composite: 3, 1f
+Text x, y: "MERHABA", 3, 470
+END
+Norwegian chars: æ, ø, å, Æ, Ø, Å

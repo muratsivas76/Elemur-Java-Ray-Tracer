@@ -1,0 +1,15 @@
+In the same directıry that exists src directory there:
+
+mkdir bin
+mkdir examples
+mkdir libs
+mkdir obj
+mkdir tool
+mkdir images 
+mkdir textures 
+mkdir scenes 
+mkdir audios 
+mkdir movs 
+mkdir animImages 
+mkdir guiScenes 
+mkdir extraSML
