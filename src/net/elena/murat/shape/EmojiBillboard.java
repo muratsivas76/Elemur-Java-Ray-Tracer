@@ -1,0 +1,361 @@
+package net.elena.murat.shape;
+
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.util.List;
+
+import net.elena.murat.material.Material;
+import net.elena.murat.math.*;
+
+/**
+ * A 2D quad in 3D space for displaying transparent images (e.g., emojis).
+ * No UV passed to Intersection. Material must compute UV from point and transform.
+ */
+public class EmojiBillboard implements EMShape {
+  
+  private final double width;
+  private final double height;
+  private final boolean isRectangle;
+  private final BufferedImage texture;
+  
+  private String imagePath = "textures/turkeyFlag.png";
+
+  private Color shadowColor = Color.BLACK;
+  private double shadowBias = 0.001;
+  private Matrix4[] animTransforms = new Matrix4[] {new Matrix4(), new Matrix4()};
+
+  private String otherAnimationInfo = "veofr,0e0fr,veofr";
+  private boolean isVisibleSpecial = false; 
+  private boolean isVisible = true;
+  private boolean isShadowEnable = true;
+  private boolean isShadowOnly = false;
+  private boolean isReflective = true;
+  private boolean isRefractive = true;
+   
+  private Matrix4 transform = Matrix4.identity();
+  private Matrix4 inverseTransform;
+  private Matrix4 inverseTransposeTransformForNormal;
+  private Material material;
+  
+  private String name = "emojibillboard";
+  
+  public EmojiBillboard(double width, double height,
+    boolean isRectangle,
+    boolean isVisible,
+    BufferedImage texture) {
+    this.width = width;
+    this.height = height;
+    this.isRectangle = isRectangle;
+    this.isVisible = isVisible;
+    this.texture = texture;
+    
+    updateTransforms();
+  }
+  
+  public EmojiBillboard(double width, double height) {
+    this (width, height, true, true, null);
+  }
+  
+  public EmojiBillboard(double size) {
+    this(size, size);
+  }
+  
+  public EmojiBillboard() {
+    this(1.0, 1.0);
+  }
+  
+  // --- EMShape Methods ---
+  
+  @Override
+  public void setTransform(Matrix4 transform) {
+    this.transform = new Matrix4(transform);
+    updateTransforms();
+  }
+  
+  @Override
+  public Matrix4 getTransform() {
+    return this.transform;
+  }
+  
+  @Override
+  public Matrix4 getInverseTransform() {
+    return this.inverseTransform;
+  }
+  
+  private void updateTransforms() {
+    this.inverseTransform = this.transform.inverse();
+    this.inverseTransposeTransformForNormal = this.transform.inverse().transpose();
+  }
+  
+  @Override
+  public void setMaterial(Material material) {
+    this.material = material;
+  }
+  
+  @Override
+  public Material getMaterial() {
+    return this.material;
+  }
+  
+  @Override
+  public double intersect(Ray ray) {
+    if (isRectangle) {
+      return intersectR(ray);
+      } else {
+      return intersectO(ray);
+    }
+  }
+  
+  // --- Original intersect ---
+  public double intersectR(Ray ray) {
+    if (inverseTransform == null) return Double.POSITIVE_INFINITY;
+    
+    Ray localRay = ray.transform(inverseTransform);
+    
+    Vector3 dir = localRay.getDirection();
+    if (Math.abs(dir.z) < Ray.EPSILON) {
+      return Double.POSITIVE_INFINITY;
+    }
+    
+    double t = -localRay.getOrigin().z / dir.z;
+    if (t < Ray.EPSILON) return Double.POSITIVE_INFINITY;
+    
+    Point3 localHit = localRay.pointAtParameter(t);
+    double x = localHit.x;
+    double y = localHit.y;
+    
+    double halfWidth = width / 2.0;
+    double halfHeight = height / 2.0;
+    
+    if (Math.abs(x) <= halfWidth && Math.abs(y) <= halfHeight) {
+      return t;
+    }
+    
+    return Double.POSITIVE_INFINITY;
+  }
+  
+  public double intersectO(Ray ray) {
+    if (inverseTransform == null) return Double.POSITIVE_INFINITY;
+    
+    Ray localRay = ray.transform(inverseTransform);
+    
+    Vector3 dir = localRay.getDirection();
+    if (Math.abs(dir.z) < Ray.EPSILON) {
+      return Double.POSITIVE_INFINITY;
+    }
+    
+    double t = -localRay.getOrigin().z / dir.z;
+    if (t < Ray.EPSILON) return Double.POSITIVE_INFINITY;
+    
+    Point3 localHit = localRay.pointAtParameter(t);
+    double x = localHit.x;
+    double y = localHit.y;
+    
+    double radiusX = width / 2.0;
+    double radiusY = height / 2.0;
+    
+    // Normalize coordinates to unit circle
+    double nx = x / radiusX;
+    double ny = y / radiusY;
+    
+    // Check if inside ellipse
+    if (nx * nx + ny * ny <= 1.0) {
+      return t;
+    }
+    
+    return Double.POSITIVE_INFINITY;
+  }
+
+  @Override
+  public List<IntersectionInterval> intersectAll(Ray ray) {
+    double t = intersect(ray);
+    if (t == Double.POSITIVE_INFINITY) {
+      return java.util.Collections.emptyList();
+    }
+    
+    Point3 hitPoint = ray.pointAtParameter(t);
+    Vector3 normal = getNormalAt(hitPoint);
+    
+    Intersection intersection = new Intersection(hitPoint, normal, t, this);
+    
+    return java.util.Arrays.asList(
+      new IntersectionInterval(t, t, intersection, intersection)
+    );
+  }
+  
+  @Override
+  public Vector3 getNormalAt(Point3 worldPoint) {
+    if (inverseTransposeTransformForNormal == null) {
+      return new Vector3(0, 0, 1);
+    }
+    
+    Vector3 localNormal = new Vector3(0, 0, 1);
+    return inverseTransposeTransformForNormal
+    .transformDirection(localNormal)
+    .normalize();
+  }
+  
+  public double getWidth() {
+    return width;
+  }
+  
+  public double getHeight() {
+    return height;
+  }
+  
+  public void setImagePath(String npath) {
+    this.imagePath = npath;
+  }
+  
+  public String getImagePath() {
+    return this.imagePath;
+  }
+  
+  @Override
+  public void setAnimationTransforms(Matrix4[] atm) {
+    this.animTransforms = atm;
+  }
+  
+  @Override
+  public Matrix4[] getAnimationTransforms() {
+    return this.animTransforms;
+  }
+  
+  @Override
+  public Color getShadowColor() {
+	  return this.shadowColor;
+  }
+  
+  @Override
+  public void setShadowColor(Color color) {
+	  this.shadowColor = color;
+  }
+  
+  @Override
+  public double getShadowBias() {
+	  return this.shadowBias;
+  }
+  
+  @Override
+  public void setShadowBias(double bias) {
+	  this.shadowBias = bias;
+  }
+  
+  ////////////////////////////
+  @Override
+  public String getNameInfo() {
+	  return ("EmojiBillboard: " + getTransform().toString());
+  }
+  
+  @Override
+  public String getOtherAnimationInfo() {
+      return this.otherAnimationInfo;
+  }
+  
+  @Override
+  public void setOtherAnimationInfo(String str) {
+      this.otherAnimationInfo = str;
+  }
+  
+  @Override
+  public boolean isVisible() {
+      return this.isVisible;
+  }
+  
+  @Override  
+  public boolean isShadowEnable() {
+      return this.isShadowEnable;
+  }
+  
+  @Override
+  public boolean isShadowOnly() {
+      return this.isShadowOnly;
+  }
+
+  @Override
+  public boolean isReflective() {
+      return this.isReflective;
+  }
+
+  @Override
+  public boolean isRefractive() {
+    return this.isRefractive;
+  }
+
+  @Override
+  public void setVisible(boolean visible) {
+      this.isVisible = visible;
+  }
+  
+  @Override
+  public void setShadowEnable(boolean enable) {
+      this.isShadowEnable = enable;
+  }
+
+  @Override
+  public void setShadowOnly(boolean only) {
+      this.isShadowOnly = only;
+  }
+  
+  @Override
+  public void setReflective(boolean rfl) {
+      this.isReflective = rfl;
+  }
+   
+  @Override
+  public void setRefractive(boolean rfr) {
+      this.isRefractive = rfr;
+  }
+  
+  @Override
+  public boolean isVisibleSpecial() {
+	  return this.isVisibleSpecial;
+  }
+  
+  @Override
+  public void setVisibleSpecial(boolean visible) {
+	  this.isVisibleSpecial = visible;
+  }
+  
+  @Override
+  public String getName() {
+	  return this.name;
+  }
+  
+  @Override
+  public void setName(String name) {
+	  this.name = name;
+  }
+  ///////////////////////
+ 
+  @Override
+  public String toString() {
+    StringBuffer sb = new StringBuffer();
+    sb.append("EmojiBillboard " + name + " {\n");
+    sb.append("    name = " + name + ";\n");
+    sb.append("    imagePath = " + getImagePath() + ";\n");
+    sb.append("    width = " + width + ";\n");
+    sb.append("    height = " + height + ";\n");
+    sb.append("    isRectangle = " + isRectangle + ";\n");
+    sb.append("\n");
+    sb.append("    " + getTransform().toString() + "\n");
+    sb.append("\n");
+    sb.append("    firstAnim_" + animTransforms[0].toString() + "\n");
+    sb.append("    secondAnim_" + animTransforms[1].toString() + "\n");
+    sb.append("    otherAnimationInfo = " + otherAnimationInfo + ";\n");
+    sb.append("\n");
+    sb.append("    shadowColor = " + net.elena.murat.util.ColorUtil.toColorString(shadowColor) + ";\n");
+	sb.append("    shadowBias = " + shadowBias + ";\n");
+	sb.append("\n");
+	sb.append("    isVisibleSpecial = " + isVisibleSpecial + ";\n");
+	sb.append("    isVisible = " + isVisible + ";\n");
+	sb.append("    isShadowEnable = " + isShadowEnable + ";\n");
+	sb.append("    isShadowOnly = " + isShadowOnly + ";\n");
+	sb.append("    isReflective = " + isReflective + ";\n");
+	sb.append("    isRefractive = " + isRefractive + ";\n");
+	sb.append("\n");
+    sb.append("    material = " + getMaterial().toString() + ";\n}");
+    return sb.toString();
+  }
+  
+}

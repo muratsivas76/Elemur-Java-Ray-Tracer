@@ -1,0 +1,139 @@
+# ===================================================
+# flg.txt
+# ===================================================
+
+# Camera Settings
+Camera mainCamera {
+    position = P(0.00, 0.00, 5.00);
+    lookAt = P(0.00, 0.00, 0.00);
+    upVector = V(0.00, 1.00, 0.00);
+    fov = 60.0;
+    orthographic = false;
+    maxRecursionDepth = 3;
+    firstAnimationPoint = P(0.00, 0.00, 0.00);
+    secondAnimationPoint = P(0.00, 0.00, 0.00);
+    reflective = true;
+    refractive = true;
+    shadowsEnabled = true;
+}
+
+# Renderer Settings
+Renderer Settings {
+    width = 800;
+    height = 600;
+    backgroundColor = #FF0000FF;
+}
+
+# Lighting
+ElenaMuratAmbientLight ambient {
+    name = ambient;
+    color = #FF191919;
+    intensity = 0.25;
+    firstAnimationIntensity = 0.0;
+    secondAnimationIntensity = 0.0;
+}
+
+MuratPointLight point {
+    name = point;
+    position = P(2.00, 5.00, 2.00);
+    color = #FFFFFFFF;
+    intensity = 1.0;
+    firstAnimationIntensity = 0.0;
+    secondAnimationIntensity = 0.0;
+    constantAttenuation = 1.0;
+    linearAttenuation = 0.1;
+    quadraticAttenuation = 0.01;
+}
+
+# Geometries/Shapes
+Plane floor {
+    name = floor;
+    pointOnPlane = P(0.00, 0.00, 0.00);
+    normal = V(0.00, 1.00, 0.00);
+
+    transform = translate(0.000, -1.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+
+    firstAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    secondAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    otherAnimationInfo = v00fr;
+
+    shadowColor = #FF000000;
+    shadowBias = 0.001;
+	
+	isVisibleSpecial = true;
+    isVisible = true;
+    isShadowEnable = false;
+    isShadowOnly = false;
+    isReflective = true;
+    isRefractive = true;
+
+    material = CarpetTextureMaterial carpettexturematerial {
+        baseColor = #FF8B4513;
+        patternColor = #FFFFD700;
+    };
+}
+
+Plane backWall {
+    name = backWall;
+    pointOnPlane = P(0.00, 0.00, 0.00);
+    normal = V(0.00, 0.00, 1.00);
+
+    transform = translate(0.000, 0.000, -11.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+
+    firstAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    secondAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    otherAnimationInfo = v00fr;
+
+    shadowColor = #FF000000;
+    shadowBias = 0.001;
+	
+	isVisibleSpecial = true;
+    isVisible = true;
+    isShadowEnable = false;
+    isShadowOnly = false;
+    isReflective = true;
+    isRefractive = true;
+
+    material = LambertMaterial lambertmaterial {
+        color = #FFFF0000;
+        ambient = 0.5;
+        diffuse = 2.0;
+    };
+}
+
+EmojiBillboard turkeyFlag {
+    name = turkeyFlag;
+    imagePath = textures/turkeyFlag.png;
+    width = 7.0;
+    height = 3.0;
+    isRectangle = false;
+
+    transform = translate(0.000, 1.000, -4.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+
+    firstAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    secondAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    otherAnimationInfo = veofr,00000,ve0fr,veofr,00000,ve0fr;
+
+    shadowColor = #440000AA;
+    shadowBias = 0.001;
+    
+    isVisibleSpecial = false;
+    isVisible = true;
+    isShadowEnable = true;
+    isShadowOnly = false;
+    isReflective = true;
+    isRefractive = true;
+
+    material = TransparentPNGMaterial transparentpngmaterial {
+        imagePath = textures/turkeyFlag.png;
+        uOffset = 0.0;
+        vOffset = 0.0;
+        uScale = 1.0;
+        vScale = 1.0;
+        isRepeatTexture = false;
+        billboardWidth = 7.0;
+        billboardHeight = 3.0;
+    };
+}
+
+-END-

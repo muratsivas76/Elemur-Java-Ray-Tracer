@@ -1,0 +1,166 @@
+# ===================================================
+# interboxes.txt
+# ===================================================
+
+# Camera Settings
+Camera mainCamera {
+    position = P(0.00, 0.00, 5.00);
+    lookAt = P(0.00, 0.00, 0.00);
+    upVector = V(0.00, 1.00, 0.00);
+    fov = 60.0;
+    orthographic = false;
+    maxRecursionDepth = 3;
+    firstAnimationPoint = P(0.00, 0.00, 0.00);
+    secondAnimationPoint = P(0.00, 0.00, 0.00);
+    reflective = true;
+    refractive = true;
+    shadowsEnabled = true;
+}
+
+# Renderer Settings
+Renderer Settings {
+    width = 800;
+    height = 600;
+    backgroundColor = #FF0000FF;
+}
+
+# Lighting
+MuratPointLight point {
+    name = point;
+    position = P(2.00, 5.00, 2.00);
+    color = #FFFFFFFF;
+    intensity = 1.0;
+    firstAnimationIntensity = 0.0;
+    secondAnimationIntensity = 0.0;
+    constantAttenuation = 1.0;
+    linearAttenuation = 0.1;
+    quadraticAttenuation = 0.01;
+}
+
+ElenaMuratAmbientLight ambient {
+    name = ambient;
+    color = #FF191919;
+    intensity = 0.25;
+    firstAnimationIntensity = 0.0;
+    secondAnimationIntensity = 0.0;
+}
+
+AreaLight area {
+    name = area;
+    position = P(0.00, 4.00, 0.00);
+    color = #FFFFFFFF;
+    intensity = 0.9;
+    firstAnimationIntensity = 0.0;
+    secondAnimationIntensity = 0.0;
+    normal = V(0.00, -1.00, 0.00);
+    width = 3.0;
+    height = 2.0;
+    samplesU = 6;
+    samplesV = 4;
+}
+
+# Geometries/Shapes
+Plane floor {
+    name = floor;
+    pointOnPlane = P(0.00, 0.00, 0.00);
+    normal = V(0.00, 1.00, 0.00);
+
+    transform = translate(0.000, -2.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+
+    firstAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    secondAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+    otherAnimationInfo = v00fr;
+
+    shadowColor = #FF000000;
+    shadowBias = 0.001;
+	
+	isVisibleSpecial = true;
+    isVisible = true;
+    isShadowEnable = false;
+    isShadowOnly = false;
+    isReflective = true;
+    isRefractive = true;
+
+    material = CheckerboardMaterial checkerboardmaterial {
+        color1 = #FF444444;
+        color2 = #FFCCCCCC;
+        size = 1.0;
+        ambientCoeff = 0.4;
+        diffuseCoeff = 0.7;
+        specularCoeff = 0.2;
+        shininess = 32.0;
+        specularColor = #FFFFFFFF;
+        reflectivity = 0.0;
+        ior = 1.0;
+        transparency = 0.0;
+    };
+}
+
+IntersectionCSG intersectioncsg {
+    name = intersectioncsg;
+    left = Box box {
+            width = 2.0;
+            height = 2.0;
+            depth = 2.0;
+        
+            transform = translate(-1.200, 0.500, 0.000) * rotate(10.000, 40.000, 0.000) * scale(1.000, 1.000, 1.000);
+        
+            firstAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+            secondAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+            otherAnimationInfo = ve0fr,0e0fr,ve0fr;
+        
+            shadowColor = #FF0000FF;
+            shadowBias = 0.001;
+        
+            isVisible = true;
+            isShadowEnable = true;
+            isShadowOnly = false;
+            isReflective = true;
+            isRefractive = true;
+        
+            };///
+    right = Box box {
+            width = 2.0;
+            height = 2.0;
+            depth = 2.0;
+        
+            transform = translate(1.200, 0.500, 0.000) * rotate(10.000, 40.000, 0.000) * scale(1.000, 1.000, 1.000);
+        
+            firstAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+            secondAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);
+            otherAnimationInfo = ve0fr,0e0fr,ve0fr;
+        
+            shadowColor = #FF00DD00;
+            shadowBias = 0.001;
+        
+            isVisible = true;
+            isShadowEnable = true;
+            isShadowOnly = false;
+            isReflective = true;
+            isRefractive = true;
+        
+            };///
+
+    transform = translate(0.000, 0.500, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);///
+
+    firstAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);///
+    secondAnim_transform = translate(0.000, 0.000, 0.000) * rotate(0.000, -0.000, 0.000) * scale(1.000, 1.000, 1.000);///
+
+    shadowColor = #FF00FF00;
+    shadowBias = 0.001;
+    otherAnimationInfo = veofr,0e0fr,veofr;
+    isVisibleSpecial = true;
+    isVisible = true;
+    isShadowEnable = true;
+    isShadowOnly = false;
+    isReflective = true;
+    isRefractive = true;
+
+    material = LambertMaterial lambertmaterial {
+        color = #FFFF0000;
+        ambient = 0.3;
+        diffuse = 1.0;
+    };
+}
+
+-END-

@@ -1,0 +1,2599 @@
+// Murat Inan
+package net.elena.murat.gui;
+
+// JAVA
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.OutputStream;
+import java.io.FileOutputStream;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
+import javax.swing.*;
+import javax.imageio.ImageIO;
+
+// CUSTOM
+import net.elena.murat.light.*;
+import net.elena.murat.material.*;
+import net.elena.murat.material.pbr.*;
+import net.elena.murat.shape.*;
+import net.elena.murat.shape.letters.*;
+import net.elena.murat.math.*;
+import net.elena.murat.lovert.*;
+import net.elena.murat.util.*;
+
+public class ElenaRayTracerGUI extends JFrame {
+    private Camera camera = new Camera();
+    private Color bgColor = Color.BLUE;
+    private Color shadowColor = Color.BLACK;
+    private int width = 800;
+    private int height = 600;
+
+    private int CURSCN = -1;
+
+    private ElenaMuratRayTracer currentTracer = new ElenaMuratRayTracer(new Scene(), width, height, bgColor);
+
+    private final JFileChooser textChooser = new JFileChooser();
+    private final JFileChooser imageChooser = new JFileChooser();
+
+    private final JButton fromFileBtn = ModernComponentFactory.createPrimaryButton("From File");
+    private final JButton saveBtn = ModernComponentFactory.createPrimaryButton("Save");
+    private final JButton renderBtn = ModernComponentFactory.createPrimaryButton("Render Scene");
+    private final JButton startBtn = ModernComponentFactory.createPrimaryButton("Start");
+    private final JButton generateSceneImagesButton = ModernComponentFactory.createPrimaryButton("Generate From Dir");
+
+    private BufferedImage renderImage;
+    //private JLabel renderLabel;
+    private final RenderPanel renderPanel = new RenderPanel();
+
+    private final JTextField countField = ModernComponentFactory.createTextField("6");
+
+    private int FRAME_COUNT = 6;
+
+    private boolean isCancelledAnimation = false;
+
+    //private Point3 TEMPPOS = new Point3(0, 0, 0);
+    //private Point3 ORIGCAMPOS = new Point3(0, 0, 0);
+
+    // Transform fields
+    private final JTextField txField = ModernComponentFactory.createTextField("0.0");
+    private final JTextField tyField = ModernComponentFactory.createTextField("0.0");
+    private final JTextField tzField = ModernComponentFactory.createTextField("0.0");
+    private final JTextField rxField = ModernComponentFactory.createTextField("0.0");
+    private final JTextField ryField = ModernComponentFactory.createTextField("0.0");
+    private final JTextField rzField = ModernComponentFactory.createTextField("0.0");
+    private final JTextField sxField = ModernComponentFactory.createTextField("1.0");
+    private final JTextField syField = ModernComponentFactory.createTextField("1.0");
+    private final JTextField szField = ModernComponentFactory.createTextField("1.0");
+
+    // Camera & render
+    private final JTextField camPosField = ModernComponentFactory.createTextField("0,1,5");
+    private final JTextField camLookField = ModernComponentFactory.createTextField("0,0,-5");
+    private final JTextField camUpField = ModernComponentFactory.createTextField("0,1,0");
+    private final JTextField fovField = ModernComponentFactory.createTextField("60");
+    private final JTextField depthField = ModernComponentFactory.createTextField("2");
+    private final JTextField widthField = ModernComponentFactory.createTextField("800");
+    private final JTextField heightField = ModernComponentFactory.createTextField("600");
+    private final JTextField bgColorField = ModernComponentFactory.createTextField("#FF0000AA");
+    //private final JTextField shadowColorField = ModernComponentFactory.createTextField("#FF000000");
+    private final JTextField camSumSubField = ModernComponentFactory.createTextField("0,0,0:0,0,0");
+
+    // Checkboxes
+    private final JCheckBox reflcbox = ModernComponentFactory.createCheckbox("Reflective:");
+    private final JCheckBox refrcbox = ModernComponentFactory.createCheckbox("Refractive:");
+    private final JCheckBox shadowcbox = ModernComponentFactory.createCheckbox("Shadow:");
+    //private final JCheckBox ortocbox = ModernComponentFactory.createCheckbox("Ortographic:");
+
+    // Combos
+    private JComboBox<String> shapeCombo;
+    private JComboBox<String> materialCombo;
+    private JComboBox<String> lightCombo;
+
+    private boolean processing = false;
+
+    private final JTextPane mathTextPane = new JTextPane();
+
+    // Text areas
+    private final JTextArea shapeParamArea = ModernComponentFactory.createTextArea(15, 55);
+    private final JTextArea materialParamArea = ModernComponentFactory.createTextArea(12, 55);
+    private final JTextArea lightParamArea = ModernComponentFactory.createTextArea(12, 55);
+    private final JTextArea shapesListArea = ModernComponentFactory.createTextArea(12,55);
+    private final JTextArea lightsListArea = ModernComponentFactory.createTextArea(12,55);
+
+    public ElenaRayTracerGUI() {
+        setTitle("Elena Ray Tracer GUI");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(1300, 800);
+        setLocationRelativeTo(null);
+
+        textChooser.setFileFilter(new FilterText());
+        imageChooser.setFileFilter(new FilterImage());
+
+        //currentTracer.setShadowColor(new Color(0, 0, 0));
+
+        JTabbedPane tabbedPane = ModernComponentFactory.createTabbedPane();
+     
+        JButton eBtn = ModernComponentFactory.createPrimaryButton("EXIT");
+        eBtn.setMnemonic(KeyEvent.VK_Q);
+        eBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                System.exit(0);
+            }
+        });
+
+        mathTextPane.setContentType("text/html");
+        mathTextPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JPanel mathPanel = new JPanel(new BorderLayout());
+        mathPanel.add("Center", new JScrollPane(mathTextPane));
+
+        JButton calculateBtn = ModernComponentFactory.createPrimaryButton("Calculate");
+        calculateBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    Point3 objectPos = new Point3(Double.parseDouble(txField.getText()),
+                    Double.parseDouble(tyField.getText()),
+                    Double.parseDouble(tzField.getText()));
+                    if (camera == null) camera = new Camera();
+                    Point3 cameraPos = camera.getCameraPosition();
+
+                    Point3 lightPos = new Point3(5, 5, 5);
+                    final int lsize = Utilities.lights.size();
+                    for (int i = 0; i < lsize; i++) {
+                        if (Utilities.lights.get(i) instanceof MuratPointLight) {
+                            lightPos = Utilities.lights.get(i).getPosition();
+                            break;
+                        }
+                    }
+
+                    String baseColor = "0000FF";
+                    double fadeFactor = 0.03;
+                    double tempFactor = 0.04;
+
+                    String input = JOptionPane.showInputDialog(renderPanel,
+                    Utilities.FADEVALS,
+                    Utilities.DEFFADES);
+                    if (input != null) {
+                        String[] fields = input.split(":");
+                        if (fields != null) {
+                            if (fields.length >= 3) {
+                                baseColor = fields[0];
+                                fadeFactor = Double.parseDouble(fields[1]);
+                                tempFactor = Double.parseDouble(fields[2]);
+                            }
+                        }
+                    } else return;
+
+                    String shapeName = (String)(shapeCombo.getSelectedItem());
+                    java.util.Map<String, Object> mymap = DepthCalculator.calculateMaterialProperties(
+                    objectPos, cameraPos, lightPos, baseColor, fadeFactor, tempFactor);
+                    String result = DepthCalculator.generateOutputString(
+                    shapeName, objectPos, baseColor, cameraPos, lightPos,
+                    fadeFactor, tempFactor, mymap);
+                    mathTextPane.setText(result);
+                    mathTextPane.setCaretPosition(0);
+                } catch (NumberFormatException nfe) {
+                    nfe.printStackTrace();
+                    return;
+                }
+            }
+        });
+        mathPanel.add("South", calculateBtn);
+
+        tabbedPane.addTab("Render View", createRenderTab());
+        tabbedPane.addTab("Anim Settings", createAnimTab());
+        tabbedPane.addTab("Camera & Renderer", createCameraTab());
+        tabbedPane.addTab("Lights", createLightsTab());
+        tabbedPane.addTab("Shapes & Materials", createShapesTab());
+        tabbedPane.addTab("Math", mathPanel);
+        tabbedPane.addTab("Exit", eBtn);
+
+        add(tabbedPane);
+
+        camera.setCameraPosition(new Point3(0, 0, 5));
+        camera.setLookAt(new Point3(0, 0, 0));
+        camera.setUpVector(new Vector3(0, 1, 0));
+        camera.setFov(60.0);
+
+        camera.setOrthographic(false);
+        camera.setReflective(true);
+        camera.setRefractive(true);
+        camera.setShadowsEnabled(true);
+
+        reflcbox.setSelected(true);
+        refrcbox.setSelected(true);
+        shadowcbox.setSelected(true);
+        //ortocbox.setSelected(false);
+
+        Utilities.lights.add(new ElenaMuratAmbientLight(Color.white, 1.0));
+        Utilities.lights.add(new MuratPointLight(new Point3(2, 5, 2), Color.white, 1.0));
+
+        textChooser.setCurrentDirectory(new File("."));
+        imageChooser.setCurrentDirectory(new File("."));
+
+        Utilities.setPane(renderPanel);
+    }
+
+    private JPanel createRenderTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+
+        renderBtn.setMnemonic(KeyEvent.VK_R);
+        renderBtn.setToolTipText("ALT+R");
+        renderBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (processing) return;
+
+                processing = true;
+                renderBtn.setEnabled(false);
+                fromFileBtn.setEnabled(false);
+                saveBtn.setEnabled(false);
+                startBtn.setEnabled(false);
+                generateSceneImagesButton.setEnabled(false);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            renderScene();
+                        } finally {
+                            SwingUtilities.invokeLater(new Runnable() {
+                                @Override
+                                public void run() {
+                                    processing = false;
+                                    renderBtn.setEnabled(true);
+                                    fromFileBtn.setEnabled(true);
+                                    saveBtn.setEnabled(true);
+                                    startBtn.setEnabled(true);
+                                    generateSceneImagesButton.setEnabled(true);
+                                }
+                            });
+                        }
+                    }
+                }).start();
+            }
+        });
+
+        fromFileBtn.setMnemonic(KeyEvent.VK_J);
+        fromFileBtn.setToolTipText("ALT+J");
+        fromFileBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (processing) return;
+
+                processing = true;
+                renderBtn.setEnabled(false);
+                fromFileBtn.setEnabled(false);
+                saveBtn.setEnabled(false);
+                startBtn.setEnabled(false);
+                generateSceneImagesButton.setEnabled(false);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            //renderScene();
+                            int rep = textChooser.showOpenDialog(renderPanel);
+                            if (rep != JFileChooser.APPROVE_OPTION) return;
+                            File file = textChooser.getSelectedFile();
+                            if (file.getName().toLowerCase().endsWith(".txt") == false) return;
+
+                            SceneParser parser = new SceneParser();
+                            BufferedImage fimg = parser.renderScene(file);
+                            renderPanel.setBufferedImage(fimg);
+                            renderImage = fimg;
+
+                            Camera sceneCamera = parser.getCamera();
+
+                            Point3 pc = sceneCamera.getCameraPosition();
+                            camPosField.setText("" + pc.x + ", " + pc.y + ", " + pc.z + "");
+
+                            pc = sceneCamera.getLookAt();
+                            camLookField.setText("" + pc.x + ", " + pc.y + ", " + pc.z + "");
+
+                            Vector3 up = sceneCamera.getUpVector();
+                            camUpField.setText("" + up.x + ", " + up.y + ", " + up.z + "");
+
+                            fovField.setText("" + sceneCamera.getFov());
+                            depthField.setText("" + sceneCamera.getMaxRecursionDepth());
+                            widthField.setText("" + parser.getWidth());
+                            heightField.setText("" + parser.getHeight());
+
+                            StringBuffer fb = new StringBuffer();
+                            Color c = parser.getBackgroundColor();
+                            int alpha = c.getAlpha();
+                            int red = c.getRed();
+                            int green = c.getGreen();
+                            int blue = c.getBlue();
+                            fb.append("#");
+                            fb.append(String.format("%02X", alpha));
+                            fb.append(String.format("%02X", red));
+                            fb.append(String.format("%02X", green));
+                            fb.append(String.format("%02X", blue));
+                            bgColorField.setText(fb.toString());
+
+                            //fb = new StringBuffer();
+                            //c = parser.getShadowColor();
+                            //alpha = c.getAlpha();
+                            //red = c.getRed();
+                            //green = c.getGreen();
+                            //blue = c.getBlue();
+                            //fb.append("#");
+                            //fb.append(String.format("%02X", alpha));
+                            //fb.append(String.format("%02X", red));
+                            //fb.append(String.format("%02X", green));
+                            //fb.append(String.format("%02X", blue));
+                            //shadowColorField.setText(fb.toString());
+
+                            boolean cxrefl = sceneCamera.isReflective();
+                            boolean cxrefr = sceneCamera.isRefractive();
+                            boolean cxshdw = sceneCamera.isShadowsEnabled();
+                            //boolean cxorto = sceneCamera.isOrthographic();
+
+                            reflcbox.setSelected(cxrefl);
+                            refrcbox.setSelected(cxrefr);
+                            shadowcbox.setSelected(cxshdw);
+                            //ortocbox.setSelected(cxorto);
+
+                            Utilities.shapes.clear();
+                            Utilities.shapes = parser.getSceneShapes();
+
+                            Utilities.lights = parser.getSceneLights();
+
+                            applyCameraSettings();
+
+                            renderPanel.repaint();
+                        } catch (Exception ioe) {
+                            ioe.printStackTrace();
+                        } finally {
+                            SwingUtilities.invokeLater(new Runnable() {
+                                @Override
+                                public void run() {
+                                    processing = false;
+                                    renderBtn.setEnabled(true);
+                                    fromFileBtn.setEnabled(true);
+                                    saveBtn.setEnabled(true);
+                                    startBtn.setEnabled(true);
+                                    generateSceneImagesButton.setEnabled(true);
+                                }
+                            });
+                        }
+                    }
+                }).start();
+            }
+        });
+
+        saveBtn.setMnemonic(KeyEvent.VK_S);
+        saveBtn.setToolTipText("ALT+S");
+        saveBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                saveScene();
+            }
+        });
+
+        JButton exit2Btn = ModernComponentFactory.createPrimaryButton("Exit");
+        exit2Btn.setMnemonic(KeyEvent.VK_W);
+        exit2Btn.setToolTipText("ALT+W");
+        exit2Btn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                System.exit(0);
+            }
+        });
+
+        JPanel xpanel = new JPanel(new GridLayout(0, 4, 0, 5));
+        xpanel.add(renderBtn);
+        xpanel.add(fromFileBtn);
+        xpanel.add(saveBtn);
+        xpanel.add(exit2Btn);
+
+        panel.add(xpanel, BorderLayout.SOUTH);
+        panel.add(renderPanel, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createAnimTab() {
+        JPanel panel = new JPanel(new GridLayout(0, 2, 5, 5));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        panel.add(ModernComponentFactory.createFormLabel("Image/Frame Count:"));
+        panel.add(countField);
+        panel.add(ModernComponentFactory.createFormLabel("SumSub Camera Anim Pos:"));
+        panel.add(camSumSubField);
+
+        startBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (processing) return;
+
+                processing = true;
+                isCancelledAnimation = false;
+                renderBtn.setEnabled(false);
+                fromFileBtn.setEnabled(false);
+                saveBtn.setEnabled(false);
+                startBtn.setEnabled(false);
+                generateSceneImagesButton.setEnabled(false);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            renderAnimScene();
+                            //isCancelledAnimation = true;
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        } finally {
+                            SwingUtilities.invokeLater(new Runnable() {
+                                @Override
+                                public void run() {
+                                    processing = false;
+                                    renderBtn.setEnabled(true);
+                                    fromFileBtn.setEnabled(true);
+                                    saveBtn.setEnabled(true);
+                                    startBtn.setEnabled(true);
+                                    generateSceneImagesButton.setEnabled(true);
+                                    isCancelledAnimation = true;
+                                }
+                            });
+                        }
+                    }
+                }).start();
+            }
+        });
+        panel.add(startBtn);
+
+        JButton cancelBtn = ModernComponentFactory.createPrimaryButton("Cancel");
+        cancelBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    isCancelledAnimation = true;
+                } finally {
+                    SwingUtilities.invokeLater(new Runnable() {
+                        @Override
+                        public void run() {
+                            isCancelledAnimation = true;
+                        }
+                    });
+                }
+            }
+        });
+        panel.add(cancelBtn);
+
+        generateSceneImagesButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                if (processing) return;
+				
+				isCancelledAnimation = false;
+                processing = true;
+                renderBtn.setEnabled(false);
+                fromFileBtn.setEnabled(false);
+                saveBtn.setEnabled(false);
+                startBtn.setEnabled(false);
+                generateSceneImagesButton.setEnabled(false);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            //renderScene();
+                            int rep = textChooser.showOpenDialog(renderPanel);
+                            if (rep != JFileChooser.APPROVE_OPTION) return;
+                            File file = textChooser.getSelectedFile();
+                            if (file.getName().toLowerCase().endsWith(".txt") == false) return;
+
+                            File dir = new File(file.getParent());
+                            if (dir == null) {
+                                System.out.println("Null dir...");
+                                return;
+                            }
+
+                            if (dir.isDirectory() == false) {
+                                System.out.println("Is not a directory...");
+                                return;
+                            }
+
+                            File[] files = dir.listFiles();
+                            java.util.Arrays.sort(files);
+                            final int len = files.length;
+                            File sfile = null;
+                            String name = "";
+                            File mfile = null;
+                            File imfi = new File("images");
+                            if (imfi.exists() == false) imfi.mkdir();
+							
+							String istr = "";
+                            for (int i = 0; i < len; i++) {
+								if (isCancelledAnimation) {
+								    istr = ("Cancelled Generate from dir Animation.");
+								    System.out.println(istr);
+								    //JOptionPane.showMessageDialog(renderPanel, istr);
+								    break;
+								}
+								
+                                sfile = files[i];
+                                name = sfile.getName().toLowerCase();
+                                if(name.endsWith(".txt") == false) continue;
+
+                                mfile = new File("images/" + (sfile.getName().replace(".txt", ".png")));
+
+                                SceneParser parser = new SceneParser();
+                                BufferedImage fimg = parser.renderScene(sfile);
+                                renderPanel.setBufferedImage(fimg);
+                                renderImage = fimg;
+
+                                Utilities.shapes.clear();
+                                Utilities.shapes = parser.getSceneShapes();
+
+                                Utilities.lights = parser.getSceneLights();
+
+                                renderPanel.repaint();
+
+                                ImageIO.write(renderImage, "PNG", mfile);
+								istr = ("Generated: " + (i+1) + "/" + len + "; images/" + mfile.getName());
+								System.out.println(istr);
+								//JOptionPane.showMessageDialog(renderPanel, istr);
+                            }
+                        } catch (Exception ioe) {
+                            ioe.printStackTrace();
+                        } finally {
+                            SwingUtilities.invokeLater(new Runnable() {
+                                @Override
+                                public void run() {
+									isCancelledAnimation = false;
+                                    processing = false;
+                                    renderBtn.setEnabled(true);
+                                    fromFileBtn.setEnabled(true);
+                                    saveBtn.setEnabled(true);
+                                    startBtn.setEnabled(true);
+                                    generateSceneImagesButton.setEnabled(true);
+                                }
+                            });
+                        }
+                    }
+                }).start();
+            }
+        });
+        panel.add(generateSceneImagesButton);
+        panel.add(ModernComponentFactory.createFormLabel(""));
+
+        return panel;
+    }
+
+    private JPanel createCameraTab() {
+        JPanel panel = new JPanel(new GridLayout(0, 2, 5, 5));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        panel.add(ModernComponentFactory.createFormLabel("Image Width:"));
+        panel.add(widthField);
+        panel.add(ModernComponentFactory.createFormLabel("Image Height:"));
+        panel.add(heightField);
+        panel.add(ModernComponentFactory.createFormLabel("BG Color (hex_argb):"));
+        panel.add(bgColorField);
+        //panel.add(ModernComponentFactory.createFormLabel("Shadow Color (hex_argb):"));
+        //panel.add(shadowColorField);
+        panel.add(ModernComponentFactory.createFormLabel("FOV (deg):"));
+        panel.add(fovField);
+        panel.add(ModernComponentFactory.createFormLabel("Depth:"));
+        panel.add(depthField);
+        panel.add(ModernComponentFactory.createFormLabel("Camera Pos (x,y,z):"));
+        panel.add(camPosField);
+        panel.add(ModernComponentFactory.createFormLabel("Look At (x,y,z):"));
+        panel.add(camLookField);
+        panel.add(ModernComponentFactory.createFormLabel("Up Vector (x,y,z):"));
+        panel.add(camUpField);
+        panel.add(reflcbox);
+        panel.add(refrcbox);
+        panel.add(shadowcbox);
+        //panel.add(ortocbox);
+
+        JButton applyBtn = ModernComponentFactory.createPrimaryButton("Apply Settings");
+        applyBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                applyCameraSettings();
+            }
+        });
+        JLabel xylbl = ModernComponentFactory.createFormLabel("Double click on renderPanel for xy info.");
+        xylbl.setForeground(Color.orange.darker());
+        xylbl.setFont(new Font("Arial", 3, 20));
+        panel.add(xylbl);
+        panel.add(ModernComponentFactory.createFormLabel(""));
+        panel.add(applyBtn);
+
+        return panel;
+    }
+
+    private void applyCameraSettings() {
+        try {
+            width = Integer.parseInt(widthField.getText());
+            height = Integer.parseInt(heightField.getText());
+            bgColor = Utilities.parseHexColor(bgColorField.getText());
+            //shadowColor = Utilities.parseHexColor(shadowColorField.getText());
+            double fov = Utilities.parseDouble(fovField.getText());
+            int depth = Integer.parseInt(depthField.getText());
+            Point3 pos = Utilities.parsePoint3(camPosField.getText());
+            Point3 look = Utilities.parsePoint3(camLookField.getText());
+            Vector3 up = Utilities.parseVector3(camUpField.getText());
+
+            camera = new Camera();
+            camera.setCameraPosition(pos);
+            camera.setLookAt(look);
+            camera.setUpVector(up);
+            camera.setFov(fov);
+            camera.setMaxRecursionDepth(depth);
+            //camera.setOrthographic(ortocbox.isSelected());
+            camera.setReflective(reflcbox.isSelected());
+            camera.setRefractive(refrcbox.isSelected());
+            camera.setShadowsEnabled(shadowcbox.isSelected());
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Invalid camera/render setting: " + ex.getMessage());
+        }
+    }
+
+    private JPanel createLightsTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+		lightCombo = ModernComponentFactory.createComboBox(Utilities.LIGHT_TYPES);        lightCombo.setForeground(Color.GREEN.darker());
+        lightCombo.setFont(new Font("Serif", 1, 20));
+        JButton addLightBtn = ModernComponentFactory.createPrimaryButton("Add Light");
+
+        addLightBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                String type = (String) lightCombo.getSelectedItem();
+                String template = Utilities.getLightTemplate(type);
+                lightParamArea.setText(template);
+                int result = JOptionPane.showConfirmDialog(ElenaRayTracerGUI.this,
+                new JScrollPane(lightParamArea),
+                "Edit " + type + " Parameters",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
+                if (result == JOptionPane.OK_OPTION) {
+                    Light light = Utilities.createLightFromText(type, lightParamArea.getText());
+                    if (light != null) {
+                        Utilities.lights.add(light);
+                    }
+                }
+            }
+        });
+
+        JPanel top = new JPanel();
+        top.add(ModernComponentFactory.createFormLabel("Light Type:"));
+        top.add(lightCombo);
+        top.add(addLightBtn);
+        panel.add(top, BorderLayout.NORTH);
+
+        JPanel fpanel = new JPanel(new GridLayout(2, 3, 0, 5));
+
+        JButton colorInfoButton = ModernComponentFactory.createPrimaryButton("Color Info");
+        colorInfoButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                JColorChooser.showDialog(renderPanel, "Colors", Color.RED);
+                return;
+            }
+        });
+        fpanel.add(colorInfoButton);
+
+		JButton changeIntensityButton = ModernComponentFactory.createPrimaryButton("Change Intensity");
+        changeIntensityButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.lights.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + Utilities.getShortName(Utilities.lights.get(i).toString());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select light for change its intensity:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a light please!");
+                    return;
+                }
+
+                Light light = Utilities.lights.get(selected);
+
+                String input = JOptionPane.showInputDialog(renderPanel,
+                Utilities.ENTERINTENSITY,
+                Utilities.INTPREVAL);
+                if (input == null) return;
+                
+                input = input.trim();
+                if (input.length() < 1) return;
+				
+                double a = 0.0;
+
+                try {
+                    a = Double.parseDouble(input);
+                } catch (NumberFormatException nfe) {
+                    nfe.printStackTrace();
+                    return;
+                }
+
+                light.setIntensity(a);
+                Utilities.lights.set(selected, light);
+                return;
+            }
+        });
+        fpanel.add(changeIntensityButton);
+
+        JButton changeAnimSettingsButton = ModernComponentFactory.createPrimaryButton("Change Light Anim");
+        changeAnimSettingsButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.lights.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + Utilities.getShortName(Utilities.lights.get(i).toString());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select light for change its animation values:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a light please!");
+                    return;
+                }
+
+                Light light = Utilities.lights.get(selected);
+
+                String input = JOptionPane.showInputDialog(renderPanel,
+                "<html><body><font color=\"red\" size=\"5\">Enter inc dec values like this -><p>0.5:-0.5</font></body></html>");
+                if (input == null) return;
+                if (input.length() < 3) return;
+                if (input.indexOf(":") < 0) return;
+
+                String[] split = input.split(":");
+                if (split == null) return;
+                if (split.length < 2) return;
+
+                double a = 0.0;
+                double b = 0.0;
+
+                try {
+                    a = Double.parseDouble(split[0]);
+                    b = Double.parseDouble(split[1]);
+                } catch (NumberFormatException nfe) {
+                    nfe.printStackTrace();
+                    a = 0.0;
+                    b = 0.0;
+                }
+
+                double[] dbls = new double[] {a, b};
+                light.setIncDecIntensity(dbls);
+                Utilities.lights.set(selected, light);
+                System.out.println("LIGHT WITH NEW ANIM VALS: " + Utilities.lights.get(selected));
+                return;
+            }
+        });
+        fpanel.add(changeAnimSettingsButton);
+
+        JButton clearSelectedLightsBtn = ModernComponentFactory.createPrimaryButton("Clear Selected Lights");
+        clearSelectedLightsBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (Utilities.lights.isEmpty()) return;
+
+                StringBuffer sb = new StringBuffer();
+
+                final int ssize = Utilities.lights.size();
+
+                for (int i = 0; i < ssize; i++) {
+                    sb.append("" + i + ": " + Utilities.getShortName(Utilities.lights.get(i).toString()) + "\n");
+                }
+                sb.append("\nPlease enter light numbers separated with comma\nfor remove after ###:\n");
+                lightsListArea.setText (sb.toString());
+
+                int result = JOptionPane.showConfirmDialog(renderPanel,
+                new JScrollPane(lightsListArea),
+                "Lights List:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (result != JOptionPane.OK_OPTION) return;
+
+                String res = lightsListArea.getText();
+                int index = res.lastIndexOf("###:");
+                if (index < 0) return;
+
+                res = (res.substring(index+4)).replaceAll("\n", "").trim();
+                if (res.length() < 1) return;
+
+                //if (res.indexOf(",") < 0) res = (res + ", ");
+                String[] strs = res.split(",");
+                int rslen = strs.length;
+
+                int[] rs = new int[rslen];
+                for (int i = 0; i < rslen; i++) {
+                    try {
+                        rs[i] = Integer.parseInt(strs[i]);
+                    } catch (NumberFormatException nfe) {
+                        System.out.println("ERROR: " + nfe.getMessage());
+                        continue;
+                    }
+                }
+
+                java.util.Arrays.sort(rs);
+                for (int i = rslen-1; i >= 0; i--) {
+                    System.out.println("Removing: " + rs [i]);
+                    Utilities.lights.remove(rs[i]);
+                }
+
+                return;
+            }
+        });
+        fpanel.add(clearSelectedLightsBtn);
+
+        JButton clearLastLightBtn = ModernComponentFactory.createPrimaryButton("Clear Last Light");
+        clearLastLightBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (Utilities.lights.isEmpty()) return;
+                Utilities.lights.remove(Utilities.lights.size() - 1);
+            }
+        });
+        fpanel.add(clearLastLightBtn);
+
+        JButton clearAllLightsBtn = ModernComponentFactory.createPrimaryButton("Clear All Lights");
+        clearAllLightsBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                Utilities.lights.clear();
+            }
+        });
+        fpanel.add(clearAllLightsBtn);
+
+        panel.add(fpanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private JPanel createShapesTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        shapeCombo = ModernComponentFactory.createComboBox(Utilities.SHAPE_TYPES);
+        shapeCombo.setFont(new Font("Serif", 1, 20));
+        shapeCombo.setForeground(Color.GREEN.darker());
+        materialCombo = ModernComponentFactory.createComboBox(Utilities.MATERIAL_TYPES);
+        materialCombo.setFont(new Font("Serif", 1, 20));
+        materialCombo.setForeground(Color.GREEN.darker());
+
+        JButton addShapeBtn = ModernComponentFactory.createPrimaryButton("Add Shape");
+        addShapeBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                addShape();
+            }
+        });
+
+        JButton clearAllShapesBtn = ModernComponentFactory.createPrimaryButton("Clear All Shapes");
+        //clearAllShapesBtn.setForeground(Color.MAGENTA);
+        clearAllShapesBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (Utilities.shapes.isEmpty()) return;
+                Utilities.shapes.clear();
+            }
+        });
+        
+        JPanel top = new JPanel();
+        top.add(clearAllShapesBtn);
+        top.add(ModernComponentFactory.createFormLabel(""));
+        top.add(ModernComponentFactory.createFormLabel("Shape:"));
+        top.add(shapeCombo);
+        top.add(ModernComponentFactory.createFormLabel("Material:"));
+        top.add(materialCombo);
+        top.add(addShapeBtn);
+        panel.add(top, BorderLayout.NORTH);
+
+        // Transform panel
+        JPanel transPanel = new JPanel(new GridLayout(3, 4, 5, 5));
+        transPanel.add(ModernComponentFactory.createFormLabel("Tx: (+Right)")); transPanel.add(txField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Ty: (+Up)")); transPanel.add(tyField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Tz: (+Back)")); transPanel.add(tzField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Rx:")); transPanel.add(rxField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Ry:")); transPanel.add(ryField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Rz:")); transPanel.add(rzField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Sx:")); transPanel.add(sxField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Sy:")); transPanel.add(syField);
+        transPanel.add(ModernComponentFactory.createFormLabel("Sz:")); transPanel.add(szField);
+        panel.add(transPanel, BorderLayout.CENTER);
+
+        JPanel zpanel = new JPanel(new GridLayout(3, 4, 2, 2));
+
+        JButton changeShadowButton = ModernComponentFactory.createPrimaryButton("Change Shadow Color");
+        changeShadowButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its shadow color:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+
+                String input = JOptionPane.showInputDialog(renderPanel,
+                Utilities.ENTERCOLOR, ColorUtil.toColorString(shape.getShadowColor()));
+
+                if (input == null) return;
+
+                Color clr = Utilities.parseFlexibleColor(input);
+                System.out.println("Shadow Color: " + clr.toString());
+                shape.setShadowColor(clr);
+
+                Utilities.shapes.set(selected, shape);
+                return;
+            }
+        });
+        zpanel.add(changeShadowButton);
+
+        JButton changeVisibleButton = ModernComponentFactory.createPrimaryButton("Change Visible");
+        changeVisibleButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its visibility:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+				
+				String ivis = "";
+				
+				if (shape.isVisible()) {
+					ivis = "0|1:n";
+				} else {
+					ivis = "0|1:y";
+				}
+				
+                String input = JOptionPane.showInputDialog(renderPanel,
+                    Utilities.ENTERVISIBILITY, ivis);
+
+                if (input == null) return;
+                input = input.trim();
+                if (input.length () < 5) return; // 0|1:n
+                input = input.toLowerCase();
+                
+                String[] inputx = input.split(":");
+                if (inputx == null) return;
+                if (inputx.length < 2) return;
+                input = inputx[1];
+                
+                boolean iscero = inputx[0].startsWith("0");
+                
+                if (input.startsWith("e") || input.startsWith("y") ||
+                    input.startsWith("v") || input.startsWith("t")) {
+					if (iscero) {
+                        shape.setVisible(true);
+				    } else {
+						shape.setVisibleSpecial(true);
+					}
+			    } else {
+					if (iscero) {
+					    shape.setVisible(false);
+				    } else {
+						shape.setVisibleSpecial(false);
+					}
+				}
+                
+                Utilities.shapes.set(selected, shape);
+                return;
+            }
+        });
+        zpanel.add(changeVisibleButton);
+
+        JButton changeShadowOnlyButton = ModernComponentFactory.createPrimaryButton("Change Shadow Only");
+        changeShadowOnlyButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its shadow only:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+				
+				String evet = "";
+				
+				if (shape.isShadowOnly()) {
+					evet = "n";
+				} else {
+					evet = "y";
+				}
+				
+                String input = JOptionPane.showInputDialog(renderPanel,
+                Utilities.ENTERSHADOWONLY, evet);
+
+                if (input == null) return;
+                input = input.trim();
+                if (input.length () < 1) return;
+                input = input.toLowerCase();
+                
+                if (input.startsWith("e") || input.startsWith("y") ||
+                    input.startsWith("v") || input.startsWith("t")) {
+                    shape.setShadowOnly(true);
+			    } else {
+					shape.setShadowOnly(false);
+				}
+                
+                Utilities.shapes.set(selected, shape);
+                return;
+            }
+        });
+        zpanel.add(changeShadowOnlyButton);
+
+        JButton changeShadowEnableButton = ModernComponentFactory.createPrimaryButton("Change Shadow Enable");
+        changeShadowEnableButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its shadow enable:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+				
+				String enable = "";
+				
+				if (shape.isShadowEnable()) {
+					enable = "n";
+				} else {
+					enable = "y";
+				}
+				
+                String input = JOptionPane.showInputDialog(renderPanel,
+                Utilities.ENTERSHADOWENABLE, enable);
+
+                if (input == null) return;
+                input = input.trim();
+                if (input.length () < 1) return;
+                input = input.toLowerCase();
+                
+                if (input.startsWith("e") || input.startsWith("y") ||
+                    input.startsWith("v") || input.startsWith("t")) {
+                    shape.setShadowEnable(true);
+			    } else {
+					shape.setShadowEnable(false);
+				}
+                
+                Utilities.shapes.set(selected, shape);
+                return;
+            }
+        });
+        zpanel.add(changeShadowEnableButton);
+
+		JButton changeOtherAnimsButton = ModernComponentFactory.createPrimaryButton("Change Other Anims");
+        changeOtherAnimsButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its other animation info:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+
+                String input = JOptionPane.showInputDialog(renderPanel,
+                Utilities.ENTEROTHERANIMS, shape.getOtherAnimationInfo());
+
+                if (input == null) return;
+                input = input.trim();
+                if (input.length () < 5) return; //veofr
+                input = input.toLowerCase();
+                
+                shape.setOtherAnimationInfo(input);
+                
+                Utilities.shapes.set(selected, shape);
+                return;
+            }
+        });
+        zpanel.add(changeOtherAnimsButton);
+
+        JButton changeReflectivityButton = ModernComponentFactory.createPrimaryButton("Change Reflect/Refract");
+        changeReflectivityButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its reflectivity:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+				
+				String rifi = "";
+				
+				if (shape.isReflective()) {
+					rifi = "0:n";
+				} else {
+					rifi = "0:y";
+				}
+				
+                String input = JOptionPane.showInputDialog(renderPanel,
+                Utilities.ENTERREFR, rifi);
+
+                if (input == null) return;
+                input = input.trim();
+                if (input.length () < 3) return;
+                if (input.charAt(1) != ':') return; // 0:e
+                input = input.toLowerCase();
+                
+                char xx = input.charAt(0);
+                char yy = input.charAt(2);
+                if (yy == 'e' || yy == 'y' ||
+                    yy == 'v' || yy == 't') {
+					if (xx == '0') {
+                        shape.setReflective(true);
+				    } else shape.setRefractive(true);
+			    } else {
+					if (xx == '0') {
+					    shape.setReflective(false);
+				    } else shape.setRefractive(false);
+				}
+                
+                Utilities.shapes.set(selected, shape);
+                return;
+            }
+        });
+        zpanel.add(changeReflectivityButton);
+
+        JButton changeBiasButton = ModernComponentFactory.createPrimaryButton("Change BIAS");
+        changeBiasButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its shadow color:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+
+                String input = JOptionPane.showInputDialog(renderPanel,
+                Utilities.ENTERBIAS, Double.toString(shape.getShadowBias()));
+
+                if (input == null) return;
+
+                input = input.trim();
+                if (input.length () < 1) return;
+
+                input = input.replaceAll(" ", "");
+
+                double bias = Ray.BIAS;
+
+                try {
+                    bias = Double.parseDouble(input);
+                } catch (NumberFormatException nfe) {
+                    nfe.printStackTrace();
+                    bias = Ray.BIAS;
+                }
+
+                System.out.println("Shadow Bias: " + bias);
+                shape.setShadowBias(bias);
+
+                Utilities.shapes.set(selected, shape);
+                return;
+            }
+        });
+        zpanel.add(changeBiasButton);
+
+        JButton changeMaterialButton = ModernComponentFactory.createPrimaryButton("Change Material");
+        changeMaterialButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its transform values:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+                final Matrix4 T = shape.getTransform();
+
+                String matType = (String) materialCombo.getSelectedItem();
+                String matTemplate = Utilities.getMaterialTemplate(matType);
+                materialParamArea.setText(matTemplate);
+                int result = JOptionPane.showConfirmDialog(renderPanel,
+                new JScrollPane(materialParamArea),
+                "Edit " + matType + " Parameters",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (result == JOptionPane.OK_OPTION) {
+                    Material mat = Utilities.createMaterialFromText(matType, materialParamArea.getText());
+                    if (mat != null) {
+                        mat.setObjectTransform(T.inverse());
+                        shape.setMaterial(mat);
+                    } else {
+                        System.out.println("Null material, using diffuse instead...");
+                        mat = new DiffuseMaterial(Color.red);
+                        mat.setObjectTransform(T.inverse());
+                        shape.setMaterial(mat);
+                    }
+                } else {
+                    System.out.println("Cancelled material, using diffuse instead...");
+                    Material mat = new DiffuseMaterial(Color.red);
+                    mat.setObjectTransform(T.inverse());
+                    shape.setMaterial(mat);
+                }
+
+                Utilities.shapes.set(selected, shape);
+
+                System.out.println("SHAPE WITH NEW MATERIAL: " + shape);
+
+                return;
+            }
+        });
+        zpanel.add(changeMaterialButton);
+
+        JButton changeTransformButton = ModernComponentFactory.createPrimaryButton("Change Transform");
+        changeTransformButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its transform values:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+
+                Object oinput = JOptionPane.showInputDialog(
+                renderPanel,
+                Utilities.VAL_SHAPE_STR_TR,
+                Utilities.USER_INPUT,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                null,
+                (shape.getTransform()).toBracketString()
+                );
+
+                String input = "";
+                if (oinput != null) {
+                    input = oinput.toString();
+                } else {
+                    input = null;
+                }
+
+                if (input == null) return;
+                if (input.length() < 12) return;
+                if (input.indexOf("[") < 0) return;
+
+                String val = Utilities.parseSingleXYZTransform(input);
+                Matrix4 xtrans = Matrix4.createMatrixFromString(val);
+
+                shape.setTransform(xtrans);
+
+                // MATERIAL TRANSFORM INVERSE UPDATE
+                Material mat = shape.getMaterial();
+                if (mat != null) {
+                    mat.setObjectTransform(xtrans.inverse());
+                }
+
+                Utilities.shapes.set(selected, shape);
+                System.out.println("SHAPE WITH NEW TRANSFORM VALS: " + Utilities.shapes.get(selected));
+
+                return;
+            }
+        });
+        zpanel.add(changeTransformButton);
+
+        JButton changeAnimSettingsButton = ModernComponentFactory.createPrimaryButton("Change Anim Transforms");
+        changeAnimSettingsButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                final int usize = Utilities.shapes.size();
+                if (usize < 1) return;
+                String[] names = new String[usize];
+                for (int i = 0; i < usize; i++) {
+                    names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+                }
+                JList<String> list = new JList<String>(names);
+                list.setForeground(Color.ORANGE.darker());
+                list.setFont(new Font("Serif", 1, 20));
+                list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+                JScrollPane scroll = new JScrollPane(list);
+                int resultx = JOptionPane.showConfirmDialog(renderPanel, scroll,
+                "Select shape for change its animation values:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (resultx != JOptionPane.OK_OPTION) return;
+                int selected = list.getSelectedIndex();
+                if (selected < 0) {
+                    JOptionPane.showMessageDialog(renderPanel, "Select a shape please!");
+                    return;
+                }
+
+                EMShape shape = Utilities.shapes.get(selected);
+				
+				String ta = (shape.getAnimationTransforms()[0]).toBracketString();
+				String tb = (shape.getAnimationTransforms()[1]).toBracketString();
+				String tall = (ta + ":" + tb);
+				
+                Object oinput = JOptionPane.showInputDialog(
+                renderPanel,
+                Utilities.VAL_SHAPE_STR,
+                Utilities.USER_INPUT,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                null,
+                tall
+                );
+
+                String input = "";
+                if (oinput != null) {
+                    input = oinput.toString();
+                } else {
+                    input = null;
+                }
+
+                if (input == null) return;
+                if (input.length() < 25) return;
+                if (input.indexOf(":") < 0) return;
+
+                String[] vals = Utilities.parseXYZTransform(input);
+                if (vals == null) return;
+                if (vals.length < 2) return;
+
+                Matrix4 a1m = Matrix4.createMatrixFromString(vals[0]);
+                Matrix4 a2m = Matrix4.createMatrixFromString(vals[1]);
+                shape.setAnimationTransforms(new Matrix4[]{a1m, a2m});
+
+                Utilities.shapes.set(selected, shape);
+                System.out.println("SHAPE WITH NEW ANIM VALS: " + Utilities.shapes.get(selected));
+                return;
+            }
+        });
+        zpanel.add(changeAnimSettingsButton);
+
+        JButton clearSelectedShapesBtn = ModernComponentFactory.createPrimaryButton("Clear Selected Shapes");
+        clearSelectedShapesBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (Utilities.shapes.isEmpty()) return;
+
+                StringBuffer sb = new StringBuffer();
+
+                final int ssize = Utilities.shapes.size();
+
+                for (int i = 0; i < ssize; i++) {
+                    sb.append("" + i + ": " + (Utilities.shapes.get(i).getNameInfo()) + "\n");
+                }
+                sb.append("\nPlease enter shape numbers separated with comma\nfor remove after ###:\n");
+                shapesListArea.setText (sb.toString());
+
+                int result = JOptionPane.showConfirmDialog(renderPanel,
+                new JScrollPane(shapesListArea),
+                "Shapes List:",
+                JOptionPane.OK_CANCEL_OPTION);
+                if (result != JOptionPane.OK_OPTION) return;
+
+                String res = shapesListArea.getText();
+                int index = res.lastIndexOf("###:");
+                if (index < 0) return;
+
+                res = (res.substring(index+4)).replaceAll("\n", "").trim();
+                if (res.length() < 1) return;
+
+                //if (res.indexOf(",") < 0) res = (res + ", ");
+                String[] strs = res.split(",");
+                int rslen = strs.length;
+
+                int[] rs = new int[rslen];
+                for (int i = 0; i < rslen; i++) {
+                    try {
+                        rs[i] = Integer.parseInt(strs[i]);
+                    } catch (NumberFormatException nfe) {
+                        System.out.println("ERROR: " + nfe.getMessage());
+                        continue;
+                    }
+                }
+
+                java.util.Arrays.sort(rs);
+                for (int i = rslen-1; i >= 0; i--) {
+                    System.out.println("Removing: " + rs [i]);
+                    Utilities.shapes.remove(rs[i]);
+                }
+
+                return;
+            }
+        });
+        zpanel.add(clearSelectedShapesBtn);
+
+        JButton clearLastShapeBtn = ModernComponentFactory.createPrimaryButton("Clear Last Shape");
+        clearLastShapeBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (Utilities.shapes.isEmpty()) return;
+                Utilities.shapes.remove(Utilities.shapes.size() - 1);
+            }
+        });
+        zpanel.add(clearLastShapeBtn);
+
+        panel.add(zpanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private void addShape() {
+        String shapeType = (String) shapeCombo.getSelectedItem();
+
+        // CSG işlemleri
+        if (shapeType.equals("UnionCSG") ||
+        shapeType.equals("IntersectionCSG") ||
+        shapeType.equals("DifferenceCSG")) {
+            if (Utilities.shapes.size() < 2) {
+                JOptionPane.showMessageDialog(this, "At least 2 shapes required for CSG.");
+                return;
+            }
+
+            String shapeTemplate = Utilities.getShapeTemplate(shapeType);
+            shapeParamArea.setText(shapeTemplate);
+            int result = JOptionPane.showConfirmDialog(this,
+            new JScrollPane(shapeParamArea),
+            "Edit " + shapeType + " Parameters",
+            JOptionPane.OK_CANCEL_OPTION);
+            if (result != JOptionPane.OK_OPTION) return;
+            String text = shapeParamArea.getText();
+            Matrix4 animTransform1 = Utilities.parseAnimationTransform(text, "firstAnim_transform");
+            Matrix4 animTransform2= Utilities.parseAnimationTransform(text, "secondAnim_transform");
+            Color shdw = Utilities.parseColor(text, "shadowColor");
+            double bias = Utilities.parseDouble(text, "shadowBias");
+
+            final int usize = Utilities.shapes.size();
+            String[] names = new String[usize];
+            for (int i = 0; i < usize; i++) {
+                names[i] = i + ": " + (Utilities.shapes.get(i).getNameInfo());
+            }
+            JList<String> list = new JList<String>(names);
+            list.setForeground(Color.ORANGE.darker());
+            list.setFont(new Font("Serif", 1, 20));
+            list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+            JScrollPane scroll = new JScrollPane(list);
+            int resultx = JOptionPane.showConfirmDialog(this, scroll,
+            "Select shapes for " + shapeType + " (min 2):",
+            JOptionPane.OK_CANCEL_OPTION);
+            if (resultx != JOptionPane.OK_OPTION) return;
+            int[] selected = list.getSelectedIndices();
+            if (selected.length < 2) {
+                JOptionPane.showMessageDialog(this, "Select at least 2 shapes.");
+                return;
+            }
+            if (shapeType.equals("DifferenceCSG") && selected.length != 2) {
+                JOptionPane.showMessageDialog(this, "DifferenceCSG requires exactly 2 shapes.");
+                return;
+            }
+
+            EMShape[] selectedShapes = new EMShape[selected.length];
+            for (int i = 0; i < selected.length; i++) {
+                selectedShapes[i] = Utilities.shapes.get(selected[i]);
+            }
+
+            EMShape csg = null;
+            if (shapeType.equals("UnionCSG")) {
+                csg = new UnionCSG(selectedShapes[0], selectedShapes[1]);
+                for (int i = 2; i < selected.length; i++) {
+                    csg = new UnionCSG(csg, selectedShapes[i]);
+                }
+            } else if (shapeType.equals("IntersectionCSG")) {
+                csg = new IntersectionCSG(selectedShapes[0], selectedShapes[1]);
+                for (int i = 2; i < selected.length; i++) {
+                    csg = new IntersectionCSG(csg, selectedShapes[i]);
+                }
+            } else if (shapeType.equals("DifferenceCSG")) {
+                csg = new DifferenceCSG(selectedShapes[0], selectedShapes[1]);
+            }
+
+            // Transform uygula
+            Matrix4 T = buildTransform();
+            csg.setTransform(T);
+            csg.setAnimationTransforms(new Matrix4[]{animTransform1, animTransform2});
+            csg.setShadowColor(shdw);
+            csg.setShadowBias(bias);
+
+            // Materyal seç
+            String matType = (String) materialCombo.getSelectedItem();
+            String matTemplate = Utilities.getMaterialTemplate(matType);
+            materialParamArea.setText(matTemplate);
+            result = JOptionPane.showConfirmDialog(this,
+            new JScrollPane(materialParamArea),
+            "Edit Material for CSG",
+            JOptionPane.OK_CANCEL_OPTION);
+            Material mat = new DiffuseMaterial(Color.red);
+            if (result == JOptionPane.OK_OPTION) {
+                mat = Utilities.createMaterialFromText(matType, materialParamArea.getText());
+                if (mat != null) {
+                    mat.setObjectTransform(T.inverse());
+                    csg.setMaterial(mat);
+                } else {
+                    System.out.println("Null Material, using DiffuseMaterial...");
+                    mat = new DiffuseMaterial(Color.red);
+                    mat.setObjectTransform(T.inverse());
+                    csg.setMaterial(mat);
+                }
+            } else {
+                System.out.println("Null Material, using DiffuseMaterial...");
+                mat.setObjectTransform(T.inverse());
+                csg.setMaterial(mat);
+            }
+
+            String leftDesc = "";
+            String rightDesc = "";
+
+            // Eski şekilleri sil, CSG'yi ekle
+            for (int i = (selected.length - 1); i >= 0; i--) {
+                Utilities.shapes.remove(selected[i]);
+            }
+            Utilities.shapes.add(csg);
+
+            return;
+        }
+
+        // Normal şekiller
+        String shapeTemplate = Utilities.getShapeTemplate(shapeType);
+        shapeParamArea.setText(shapeTemplate);
+        int result = JOptionPane.showConfirmDialog(this,
+        new JScrollPane(shapeParamArea),
+        "Edit " + shapeType + " Parameters",
+        JOptionPane.OK_CANCEL_OPTION);
+        if (result != JOptionPane.OK_OPTION) return;
+
+        EMShape shape = Utilities.createShapeFromText(shapeType, shapeParamArea.getText());
+        if (shape == null) return;
+
+        Matrix4 T = buildTransform();
+        shape.setTransform(T);
+
+        String matType = (String) materialCombo.getSelectedItem();
+        String matTemplate = Utilities.getMaterialTemplate(matType);
+        materialParamArea.setText(matTemplate);
+        result = JOptionPane.showConfirmDialog(this,
+        new JScrollPane(materialParamArea),
+        "Edit " + matType + " Parameters",
+        JOptionPane.OK_CANCEL_OPTION);
+        if (result == JOptionPane.OK_OPTION) {
+            Material mat = Utilities.createMaterialFromText(matType, materialParamArea.getText());
+            if (mat != null) {
+                mat.setObjectTransform(T.inverse());
+                shape.setMaterial(mat);
+            } else {
+                System.out.println("Null material, using diffuse instead...");
+                mat = new DiffuseMaterial(Color.red);
+                mat.setObjectTransform(T.inverse());
+                shape.setMaterial(mat);
+            }
+        } else {
+            System.out.println("Cancelled material, using diffuse instead...");
+            Material mat = new DiffuseMaterial(Color.red);
+            mat.setObjectTransform(T.inverse());
+            shape.setMaterial(mat);
+        }
+
+        Utilities.shapes.add(shape);
+
+        return;
+    }
+
+  private void renderAnimScene() throws Exception {
+    final int totalFrames = Integer.parseInt(countField.getText());
+    if (Utilities.shapes.isEmpty()) return;
+
+    String campos = camSumSubField.getText();
+    String[] splitz = campos.split(":");
+    String[] delta1 = splitz[0].split(",");
+    String[] delta2 = splitz[1].split(",");
+
+    Point3 camDelta1 = new Point3(Double.parseDouble(delta1[0]), Double.parseDouble(delta1[1]), Double.parseDouble(delta1[2]));
+    Point3 camDelta2 = new Point3(Double.parseDouble(delta2[0]), Double.parseDouble(delta2[1]), Double.parseDouble(delta2[2]));
+    Point3 originalCamPos = camera.getCameraPosition();
+
+    // Save original values for final reset
+    List<Matrix4> originalTransforms = new ArrayList<>();
+    List<Matrix4[]> originalAnimTransforms = new ArrayList<>();
+    List<Double> originalIntensities = new ArrayList<>();
+    List<AnimationInfo> originalAnimInfos = new ArrayList<>();
+    
+    for (EMShape shape : Utilities.shapes) {
+        originalTransforms.add(shape.getTransform());
+        originalAnimTransforms.add(shape.getAnimationTransforms());
+        originalAnimInfos.add(new AnimationInfo(
+                               shape.isVisible(), 
+                               shape.isShadowEnable(),
+                               shape.isShadowOnly(),
+                               shape.isReflective(),
+                               shape.isRefractive()));
+    }
+    for (Light light : Utilities.lights) {
+        originalIntensities.add(light.getIntensity());
+    }
+
+    // Store end values of first half for second half
+    List<Matrix4> firstHalfEndTransforms = new ArrayList<>();
+    List<Double> firstHalfEndIntensities = new ArrayList<>();
+
+    // Animation directory
+    File animDir = new File("animImages/scene_" + Utilities.createDateString() + "_" + (String.format("%03d", ++CURSCN)));
+    while(animDir.exists()) animDir = new File("animImages/scene_" + Utilities.createDateString() + "_" + (String.format("%03d", ++CURSCN)));
+    animDir.mkdir();
+    new File("guiScenes/" + animDir.getName()).mkdir();
+
+    for (EMShape shape : Utilities.shapes) {
+        firstHalfEndTransforms.add(shape.getTransform()); // original values 
+    }
+    for (Light light : Utilities.lights) {
+        firstHalfEndIntensities.add(light.getIntensity());
+    }
+
+    // ALL FRAMES - One loop
+    for (int frame = 0; frame < totalFrames; frame++) {
+        if (isCancelledAnimation) break;
+
+        boolean isFirstHalf = frame < (totalFrames / 2);
+        int animIndex = isFirstHalf ? 0 : 1;
+        
+        // Relative frame
+        int relativeFrame;
+        if (isFirstHalf) {
+            relativeFrame = frame; // 0, 1, 2...
+        } else {
+            relativeFrame = frame - (totalFrames / 2); // 0, 1, 2...
+        }
+
+        // CAMERA MOVEMENT
+        Point3 currentCamPos;
+        if (isFirstHalf) {
+            currentCamPos = originalCamPos.add(camDelta1.multiply(relativeFrame));
+        } else {
+            currentCamPos = originalCamPos.add(camDelta1.multiply(totalFrames/2))
+                                           .add(camDelta2.multiply(relativeFrame));
+        }
+        camera.setCameraPosition(currentCamPos);
+        
+        AnimationInfo ainfo = null;
+         
+        // UPDATE SHAPE TRANSFORMS
+        for (int i = 0; i < Utilities.shapes.size(); i++) {
+            EMShape shape = Utilities.shapes.get(i);
+            Matrix4 animT = originalAnimTransforms.get(i)[animIndex];
+
+            Matrix4 scaledAnimT = new Matrix4();
+            // Transform 
+            int transformFrame = relativeFrame + 1;
+            scaledAnimT.setTx(animT.getTx() * transformFrame);
+            scaledAnimT.setTy(animT.getTy() * transformFrame);
+            scaledAnimT.setTz(animT.getTz() * transformFrame);
+            scaledAnimT.setRx(animT.getRx() * transformFrame);
+            scaledAnimT.setRy(animT.getRy() * transformFrame);
+            scaledAnimT.setRz(animT.getRz() * transformFrame);
+            scaledAnimT.setSx(((animT.getSx()-1) * transformFrame) + 1);
+            scaledAnimT.setSy(((animT.getSy()-1) * transformFrame) + 1);
+            scaledAnimT.setSz(((animT.getSz()-1) * transformFrame) + 1);
+
+            // Use different base values for second half
+            Matrix4 baseTransform;
+            if (isFirstHalf) {
+                baseTransform = originalTransforms.get(i);
+            } else {
+                // Security
+                if (i < firstHalfEndTransforms.size()) {
+                    baseTransform = firstHalfEndTransforms.get(i);
+                } else {
+                    baseTransform = originalTransforms.get(i);
+                }
+            }
+
+            Matrix4 newTransform = Matrix4.add(baseTransform, scaledAnimT);
+            shape.setTransform(newTransform);
+            
+            // firstHalfEndTransforms
+            if (isFirstHalf && frame == (totalFrames / 2) - 1) {
+                if (i < firstHalfEndTransforms.size()) {
+                    firstHalfEndTransforms.set(i, newTransform);
+                }
+            }
+            
+            String oinfo = shape.getOtherAnimationInfo();
+            String[] oinfos = oinfo.split(",");
+            final int clen = oinfos.length;
+            
+            if (oinfos != null && clen > 0 && frame < clen) {
+                ainfo = createAnimationInfo(oinfos[frame].trim().replaceAll(" ", ""));
+            } else if (originalAnimInfos != null && i < originalAnimInfos.size()) {
+                ainfo = originalAnimInfos.get(i);
+            } else {
+                ainfo = new AnimationInfo(
+                    shape.isVisible(), 
+                    shape.isShadowEnable(),
+                    shape.isShadowOnly(),
+                    shape.isReflective(),
+                    shape.isRefractive()
+                );
+            }
+            
+            shape.setVisible(ainfo.isVisible());
+            shape.setShadowEnable(ainfo.isShadowEnable());
+            shape.setShadowOnly(ainfo.isShadowOnly());
+            shape.setReflective(ainfo.isReflective());
+            shape.setRefractive(ainfo.isRefractive());
+            
+            // OBJECT TRANSFORM UPDATE:
+            Material mat = shape.getMaterial();
+            if (mat != null) {
+                mat.setObjectTransform(newTransform.inverse());
+            }
+        }
+
+        // LIGHT INTENSITY UPDATES
+        for (int i = 0; i < Utilities.lights.size(); i++) {
+            Light light = Utilities.lights.get(i);
+            double[] incDec = light.getIncDecIntensity();
+            double baseIntensity = originalIntensities.get(i);
+
+            if (isFirstHalf) {
+                double newIntensity = baseIntensity + (incDec[0] * relativeFrame);
+                light.setIntensity(newIntensity);
+                
+                // firstHalfEndIntensities
+                if (frame == (totalFrames / 2) - 1) {
+                    if (i < firstHalfEndIntensities.size()) {
+                        firstHalfEndIntensities.set(i, newIntensity);
+                    }
+                }
+            } else {
+                double firstHalfMax = baseIntensity + (incDec[0] * (totalFrames / 2));
+                double newIntensity = firstHalfMax + (incDec[1] * relativeFrame);
+                light.setIntensity(newIntensity);
+            }
+        }
+
+        // RENDER
+        Scene scene = new Scene();
+        for (EMShape s : Utilities.shapes) scene.addShape(s);
+        for (Light l : Utilities.lights) scene.addLight(l);
+
+        ElenaMuratRayTracer tracer = new ElenaMuratRayTracer(scene, width, height, bgColor);
+        tracer.setCamera(camera);
+
+        renderImage = tracer.render();
+        renderPanel.setBufferedImage(renderImage);
+        renderPanel.repaint();
+
+        // SAVE
+        File file = new File(animDir.getPath() + "/animScene_" + String.format("%03d", frame) + ".png");
+        ImageIO.write(renderImage, "PNG", file);
+        saveSceneFile(file, Utilities.shapes, Utilities.lights, animDir.getName());
+
+        System.out.println("Frame " + (frame + 1) + "/" + (totalFrames) + " saved");
+        try { Thread.sleep(100); } catch (InterruptedException ex) { }
+    }
+
+    // RESTORE ORIGINAL VALUES
+    camera.setCameraPosition(originalCamPos);
+    
+    AnimationInfo ainfo = null;
+    for (int i = 0; i < Utilities.shapes.size(); i++) {
+        Utilities.shapes.get(i).setTransform(originalTransforms.get(i));
+        Utilities.shapes.get(i).setAnimationTransforms(originalAnimTransforms.get(i));
+        ainfo = originalAnimInfos.get(i);
+        Utilities.shapes.get(i).setVisible(ainfo.isVisible());
+        Utilities.shapes.get(i).setShadowEnable(ainfo.isShadowEnable());
+        Utilities.shapes.get(i).setShadowOnly(ainfo.isShadowOnly());
+        Utilities.shapes.get(i).setReflective(ainfo.isReflective());
+        Utilities.shapes.get(i).setRefractive(ainfo.isRefractive());
+    }
+    for (int i = 0; i < Utilities.lights.size(); i++) {
+        Utilities.lights.get(i).setIntensity(originalIntensities.get(i));
+    }
+
+    JOptionPane.showMessageDialog(renderPanel,
+    "<html><body><font color='red' size='5'>Animation completed! " + (totalFrames) + " frames</font></body></html>");
+  }
+
+	private AnimationInfo createAnimationInfo(String mtext) {
+	    //veofr: visibility, shadowEnable, shadowOnly, reflectivity, refractivity
+	    AnimationInfo ainfo = new AnimationInfo(true, true, false, true, true);
+	    if (mtext.length() < 5) return ainfo;
+	    
+	    String text = mtext.toLowerCase();
+	    
+	    boolean isVisibleShape = true;
+	    boolean isShadowEnableShape = true;
+	    boolean isShadowOnlyShape = false;
+	    boolean isReflectiveShape = true;
+	    boolean isRefractiveShape = true;
+	    
+	    char chr = text.charAt(0);
+	    if (chr != 'v') isVisibleShape = false;
+	    chr = text.charAt(1);
+	    if (chr != 'e') isShadowEnableShape = false;
+	    chr = text.charAt(2);
+	    if (chr == 'o') isShadowOnlyShape = true;
+	    chr = text.charAt(3);
+	    if (chr != 'f') isReflectiveShape = false;
+	    chr = text.charAt(4);
+	    if (chr != 'r') isRefractiveShape = false;
+	    
+	    ainfo = new AnimationInfo(isVisibleShape, isShadowEnableShape,
+	                              isShadowOnlyShape, isReflectiveShape,
+	                              isRefractiveShape);
+	    
+	    return ainfo;
+	}
+	
+    private void renderScene() {
+        try {
+            Scene scene = new Scene();
+            for (EMShape s : Utilities.shapes) {
+                scene.addShape(s);
+                System.out.println(s);
+                System.out.println("MATERIAL/TEXTURE:" + Utilities.getShortName(s.getMaterial().toString()));
+            }
+            for (Light l : Utilities.lights) {
+                scene.addLight(l);
+                System.out.println(Utilities.getShortName(l.toString()));
+            }
+
+            bgColor = Utilities.parseFlexibleColor(bgColorField.getText());
+            //shadowColor = Utilities.parseHexColor(shadowColorField.getText());
+
+            ElenaMuratRayTracer tracer = new ElenaMuratRayTracer(scene, width, height, bgColor);
+            if (camera != null) tracer.setCamera(camera);
+            //System.out.println("" + camera.toString());
+            //if (shadowColor != null) tracer.setShadowColor(shadowColor);
+
+            currentTracer = tracer;
+            renderImage = tracer.render();
+
+            renderPanel.setBufferedImage(renderImage);
+            renderPanel.repaint();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Render failed: " + ex.getMessage());
+        }
+    }
+
+    private void saveScene() {
+        if (renderImage == null) return;
+
+        int rep=imageChooser.showSaveDialog (renderPanel);
+        if (rep != JFileChooser.APPROVE_OPTION) return;
+
+        File f=imageChooser.getSelectedFile ();
+
+        String format = getFormat(f);
+
+        boolean errored = false;
+
+        try {
+            ImageIO.write(renderImage, format, f);
+            System.out.println("Saved: " + f.getName());
+            JOptionPane.showMessageDialog(renderPanel, "<html><body>Saved: <font size=\"5\">"+f.getName()+"</font></body></html>");
+        } catch (IOException ioe) {
+            ioe.printStackTrace();
+            errored = true;
+        }
+
+        if (errored) return;
+
+        try {
+            saveSceneFileX(f);
+        } catch (IOException ioe) {
+            ioe.printStackTrace();
+        }
+
+        return;
+    }
+
+    private final String getFormat(File f) {
+        String name = (f.getName()).toLowerCase(java.util.Locale.ENGLISH);
+
+        String FMT = "PNG";
+        if (name.endsWith(".png")) {
+            FMT = "PNG";
+        } else if (name.endsWith(".jpg")) {
+            FMT = "JPG";
+        } else if (name.endsWith(".jpeg")) {
+            FMT = "JPEG";
+        } else {
+            FMT = "PNG";
+        }
+
+        return FMT;
+    }
+
+    private final void saveSceneFile(File fx) throws IOException {
+        String name = fx.getName();
+        int index = name.lastIndexOf(".");
+        if (index < 0) return;
+        name = name.substring(0, index);
+
+        name = "guiScenes/" + name + ".txt";
+
+        File f = new File(name);
+
+        OutputStream fos = new FileOutputStream(f);
+        PrintStream ps = new PrintStream(fos, true, "UTF-8");
+
+        ps.println("# ===================================================");
+        ps.println("# " + f.getName());
+        ps.println("# ===================================================\n");
+
+        ps.println("# Camera Settings");
+        ps.println(camera.toString());
+
+        ps.println("# Renderer Settings");
+        ps.println(currentTracer.toString());
+
+        ps.println("# Lighting");
+
+        final int lsize = Utilities.lights.size();
+        for (int i = 0; i < lsize; i++) {
+            ps.println(Utilities.lights.get(i).toString());
+            ps.println("");
+        }
+
+        ps.println("# Geometries/Shapes");
+
+        final int ssize = Utilities.shapes.size();
+        for (int i = 0; i < ssize; i++) {
+            ps.println(Utilities.shapes.get(i).toString());
+            if (i != ssize-1) ps.println("");
+        }
+
+        ps.println("\n-END-");
+
+        ps.flush();
+        ps.close();
+        fos.flush();
+        fos.close();
+
+        System.out.println("Saved: " + name);
+
+        return;
+    }
+
+    private final void saveSceneFileX(File fx) throws IOException {
+        String name = fx.getName();
+        int index = name.lastIndexOf(".");
+        if (index < 0) return;
+        name = name.substring(0, index);
+
+        name = "scenes/" + name + ".txt";
+
+        File f = new File(name);
+
+        OutputStream fos = new FileOutputStream(f);
+        PrintStream ps = new PrintStream(fos, true, "UTF-8");
+
+        ps.println("# ===================================================");
+        ps.println("# " + f.getName());
+        ps.println("# ===================================================\n");
+
+        ps.println("# Camera Settings");
+        ps.println(camera.toString());
+
+        ps.println("# Renderer Settings");
+        ps.println(currentTracer.toString());
+
+        ps.println("# Lighting");
+
+        final int lsize = Utilities.lights.size();
+        for (int i = 0; i < lsize; i++) {
+            ps.println(Utilities.lights.get(i).toString());
+            ps.println("");
+        }
+
+        ps.println("# Geometries/Shapes");
+
+        final int ssize = Utilities.shapes.size();
+        for (int i = 0; i < ssize; i++) {
+            ps.println(Utilities.shapes.get(i).toString());
+            if (i != ssize-1) ps.println("");
+        }
+
+        ps.println("\n-END-");
+
+        ps.flush();
+        ps.close();
+        fos.flush();
+        fos.close();
+
+        System.out.println("Saved: " + name);
+
+        return;
+    }
+
+    private final void saveSceneFile(File fx,
+    java.util.List<EMShape> scShapes,
+    java.util.List<Light> scLights,
+    String sceneDirName) throws IOException {
+        String name = fx.getName();
+        int index = name.lastIndexOf(".");
+        if (index < 0) return;
+        name = name.substring(0, index);
+
+        name = "guiScenes/" + sceneDirName + "/" + name + ".txt";
+
+        File f = new File(name);
+
+        OutputStream fos = new FileOutputStream(f);
+        PrintStream ps = new PrintStream(fos, true, "UTF-8");
+
+        ps.println("# ===================================================");
+        ps.println("# " + f.getName());
+        ps.println("# ===================================================\n");
+
+        ps.println("# Camera Settings");
+        ps.println(camera.toString());
+
+        ps.println("# Renderer Settings");
+        ps.println(currentTracer.toString());
+
+        ps.println("# Lighting");
+
+        final int lsize = scLights.size();
+        for (int i = 0; i < lsize; i++) {
+            ps.println(scLights.get(i).toString());
+            ps.println("");
+        }
+
+        ps.println("# Geometries/Shapes");
+
+        final int ssize = scShapes.size();
+        for (int i = 0; i < ssize; i++) {
+            ps.println(scShapes.get(i).toString());
+            if (i != ssize-1) ps.println("");
+        }
+
+        ps.println("\n-END-");
+
+        ps.flush();
+        ps.close();
+        fos.flush();
+        fos.close();
+
+        System.out.println("Saved: " + f.getName());
+        return;
+    }
+
+    private final String toTransformString() {
+        StringBuffer sb = new StringBuffer();
+        sb.append("translate(");
+        sb.append(txField.getText());
+        sb.append(", ");
+        sb.append(tyField.getText());
+        sb.append(", ");
+        sb.append(tzField.getText());
+        sb.append(") * rotate(");
+        sb.append(rxField.getText());
+        sb.append(", ");
+        sb.append(ryField.getText());
+        sb.append(", ");
+        sb.append(rzField.getText());
+        sb.append(") * scale(");
+        sb.append(sxField.getText());
+        sb.append(", ");
+        sb.append(syField.getText());
+        sb.append(", ");
+        sb.append(szField.getText());
+        sb.append(");");
+
+        return sb.toString();
+    }
+
+    private final class RenderPanel extends JPanel implements MouseListener {
+        private BufferedImage bmg = null;
+
+        private RenderPanel() {
+            super(true);
+            addMouseListener(this);
+        }
+
+        private BufferedImage getBufferedImage() {
+            return bmg;
+        }
+
+        private void setBufferedImage(BufferedImage b) {
+            this.bmg = b;
+        }
+
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+
+            if (this.bmg != null) {
+                g.drawImage(this.bmg, 0, 0, this);
+            }
+
+            return;
+        }
+
+@Override
+public void mouseClicked(MouseEvent e) {
+    // Only handle double-clicks
+    if (e.getClickCount() != 2) return;
+    
+    int x = e.getX();
+    int y = e.getY();
+    
+    // Default values
+    String argbHex = "#FFFFFFFF";
+    String rgbHex = "#FFFFFF";
+    String blendedWhiteHex = "#FFFFFF";
+    String blendedBlackHex = "#000000";
+    int alpha = 255;
+    int red = 255;
+    int green = 255;
+    int blue = 255;
+    
+    // Check if click is within image bounds
+    if (this.bmg != null && 
+        x >= 0 && x < this.bmg.getWidth() && 
+        y >= 0 && y < this.bmg.getHeight()) {
+        
+        // Get ARGB value from BufferedImage
+        int argb = this.bmg.getRGB(x, y);
+        
+        // Extract ARGB components
+        alpha = (argb >> 24) & 0xFF;     // Alpha channel (0-255)
+        red = (argb >> 16) & 0xFF;       // Red component (0-255)
+        green = (argb >> 8) & 0xFF;      // Green component (0-255)
+        blue = argb & 0xFF;              // Blue component (0-255)
+        
+        // 1. Raw ARGB value (8 hex digits: AARRGGBB)
+        argbHex = String.format("#%02X%02X%02X%02X", alpha, red, green, blue);
+        
+        // 2. RGB without alpha (6 hex digits: RRGGBB) - Alpha discarded
+        rgbHex = String.format("#%02X%02X%02X", red, green, blue);
+        
+        // 3. Color as it appears on WHITE background (recommended)
+        // Formula: blended = foreground * alpha/255 + background * (1 - alpha/255)
+        float alphaRatio = alpha / 255.0f;
+        float inverseAlpha = 1.0f - alphaRatio;
+        
+        int blendedRedWhite = (int)(red * alphaRatio + 255 * inverseAlpha);
+        int blendedGreenWhite = (int)(green * alphaRatio + 255 * inverseAlpha);
+        int blendedBlueWhite = (int)(blue * alphaRatio + 255 * inverseAlpha);
+        blendedWhiteHex = String.format("#%02X%02X%02X", 
+            blendedRedWhite, blendedGreenWhite, blendedBlueWhite);
+        
+        // 4. Color as it appears on BLACK background
+        int blendedRedBlack = (int)(red * alphaRatio);
+        int blendedGreenBlack = (int)(green * alphaRatio);
+        int blendedBlueBlack = (int)(blue * alphaRatio);
+        blendedBlackHex = String.format("#%02X%02X%02X", 
+            blendedRedBlack, blendedGreenBlack, blendedBlueBlack);
+    }
+    
+    // Calculate 3D world coordinates
+    if (camera == null) camera = new Camera();
+    Camera cam = camera.copy();
+    Point3 p = Utilities.pixelToWorld(x, y, width, height, cam);
+    String pstr = p.toString();
+    
+    // Calculate alpha percentage
+    int alphaPercent = (int)((alpha / 255.0) * 100);
+    
+    // Create HTML message with all color information
+    String message = String.format(
+        "<html><body>" +
+        "<b><font color=\"blue\" size=\"6\">%s</font></b><br/><br/>" +
+        "<font size=\"5\"><b>Raw ARGB:</b> <font color=\"%s\">&#9608;</font> %s</font><br/><br/>" +
+        "<font size=\"5\"><b>RGB (no alpha):</b> <font color=\"%s\">&#9608;</font> %s</font><br/><br/>" +
+        "<font size=\"5\"><b>On WHITE background:</b> <font color=\"%s\">&#9608;</font> %s</font><br/><br/>" +
+        "<font size=\"5\"><b>On BLACK background:</b> <font color=\"%s\">&#9608;</font> %s</font><br/><br/>" +
+        "<font size=\"5\"><b>Alpha: %d/255 (%d%% opaque)</b></font>" +
+        "</body></html>",
+        pstr,
+        argbHex, argbHex,        // Raw ARGB with color sample
+        rgbHex, rgbHex,          // RGB without alpha
+        blendedWhiteHex, blendedWhiteHex, // On white background (recommended)
+        blendedBlackHex, blendedBlackHex, // On black background
+        alpha, alphaPercent
+    );
+    
+    // Show dialog with all information
+    JOptionPane.showMessageDialog(renderPanel, message);
+    
+    return;
+}
+
+        @Override
+        public void mousePressed(MouseEvent e) {
+        }
+
+        @Override
+        public void mouseReleased(MouseEvent e) {
+        }
+
+        @Override
+        public void mouseEntered(MouseEvent e) {
+        }
+
+        @Override
+        public void mouseExited(MouseEvent e) {
+        }
+    }
+
+    // ——————— UTILS ———————
+    private Matrix4 buildTransform() {
+        double tx = Utilities.parseDouble(txField.getText());
+        double ty = Utilities.parseDouble(tyField.getText());
+        double tz = Utilities.parseDouble(tzField.getText());
+        double rx = Utilities.parseDouble(rxField.getText());
+        double ry = Utilities.parseDouble(ryField.getText());
+        double rz = Utilities.parseDouble(rzField.getText());
+        double sx = Utilities.parseDouble(sxField.getText());
+        double sy = Utilities.parseDouble(syField.getText());
+        double sz = Utilities.parseDouble(szField.getText());
+
+        Matrix4 T = Matrix4.identity();
+        T = T.multiply(Matrix4.translate(tx, ty, tz));
+        T = T.multiply(Matrix4.rotateZ(rz));
+        T = T.multiply(Matrix4.rotateY(ry));
+        T = T.multiply(Matrix4.rotateX(rx));
+        T = T.multiply(Matrix4.scale(sx, sy, sz));
+        return T;
+    }
+
+    ///////////
+    private static final void forCompileNames() {
+        AmberMaterial ambermaterial_variable = null;
+        AnodizedMetalMaterial anodizedmetalmaterial_variable = null;
+        AnodizedTextMaterial anodizedtextmaterial_variable = null;
+        AreaLight arealight_variable = null;
+        AuroraCeramicMaterial auroraceramicmaterial_variable = null;
+        BaklavaMaterial baklavamaterial_variable = null;
+        BioluminescentLight bioluminescentlight_variable = null;
+        BlackHoleLight blackholelight_variable = null;
+        BlackHoleMaterial blackholematerial_variable = null;
+        net.elena.murat.shape.Box box_variable = null;
+        BrightnessMaterial brightnessmaterial_variable = null;
+        BrunostCheeseMaterial brunostcheesematerial_variable = null;
+        BumpMaterial bumpmaterial_variable = null;
+        CSGShape csgshape_variable = null;
+        CalligraphyRuneMaterial calligraphyrunematerial_variable = null;
+        Camera camera_variable = null;
+        CarpetTextureMaterial carpettexturematerial_variable = null;
+        CeramicTilePBRMaterial ceramictilepbrmaterial_variable = null;
+        CheckerboardMaterial checkerboardmaterial_variable = null;
+        ChromePBRMaterial chromepbrmaterial_variable = null;
+        CiniMaterial cinimaterial_variable = null;
+        CircleTextureMaterial circletexturematerial_variable = null;
+        CoffeeFjordMaterial coffeefjordmaterial_variable = null;
+        ColorUtil colorutil_variable = null;
+        Cone cone_variable = null;
+        ContrastMaterial contrastmaterial_variable = null;
+        CopperMaterial coppermaterial_variable = null;
+        CopperPBRMaterial copperpbrmaterial_variable = null;
+        Crescent crescent_variable = null;
+        CrystalClearMaterial crystalclearmaterial_variable = null;
+        CrystalMaterial crystalmaterial_variable = null;
+        Cube cube_variable = null;
+        Cylinder cylinder_variable = null;
+        DamaskCeramicMaterial damaskceramicmaterial_variable = null;
+        DewDropMaterial dewdropmaterial_variable = null;
+        DiagonalCheckerMaterial diagonalcheckermaterial_variable = null;
+        DiamondMaterial diamondmaterial_variable = null;
+        DielectricMaterial dielectricmaterial_variable = null;
+        DifferenceCSG differencecsg_variable = null;
+        DiffuseMaterial diffusematerial_variable = null;
+        DynamicGlassMaterial dynamicglassmaterial_variable = null;
+        //EMShape emshape_variable = null;
+        EdgeLightColorMaterial edgelightcolormaterial_variable = null;
+        ElenaDirectionalLight elenadirectionallight_variable = null;
+        ElenaMuratAmbientLight elenamuratambientlight_variable = null;
+        ElenaMuratRayTracer elenamuratraytracer_variable = null;
+        //ElenaRayTracerGUI elenaraytracergui_variable = null;
+        ElenaTextureMaterial elenatexturematerial_variable = null;
+        Ellipsoid ellipsoid_variable = null;
+        EmeraldMaterial emeraldmaterial_variable = null;
+        EmissiveMaterial emissivematerial_variable = null;
+        EmojiBillboard emojibillboard_variable = null;
+        FjordCrystalMaterial fjordcrystalmaterial_variable = null;
+        FloatColor floatcolor_variable = null;
+        FractalBarkMaterial fractalbarkmaterial_variable = null;
+        FractalFireMaterial fractalfirematerial_variable = null;
+        FractalLight fractallight_variable = null;
+        GhostTextMaterial ghosttextmaterial_variable = null;
+        GlassMaterial glassmaterial_variable = null;
+        GlassicTilePBRMaterial glassictilepbrmaterial_variable = null;
+        GoldMaterial goldmaterial_variable = null;
+        GoldPBRMaterial goldpbrmaterial_variable = null;
+        GradientChessMaterial gradientchessmaterial_variable = null;
+        GradientImageTextMaterial gradientimagetextmaterial_variable = null;
+        GradientTextMaterial gradienttextmaterial_variable = null;
+        GraniteMaterial granitematerial_variable = null;
+        HamamSaunaMaterial hamamsaunamaterial_variable = null;
+        HexagonalHoneycombMaterial hexagonalhoneycombmaterial_variable = null;
+        HologramDataMaterial hologramdatamaterial_variable = null;
+        HolographicDiffractionMaterial holographicdiffractionmaterial_variable = null;
+        HolographicPBRMaterial holographicpbrmaterial_variable = null;
+        HotCopperMaterial hotcoppermaterial_variable = null;
+        HybridTextMaterial hybridtextmaterial_variable = null;
+        Hyperboloid hyperboloid_variable = null;
+        Image3D image3d_variable = null;
+        ImageTexture imagetexture_variable = null;
+        ImageTextureMaterial imagetexturematerial_variable = null;
+        ImageUtils3D imageutils3d_variable = null;
+        Intersection intersection_variable = null;
+        IntersectionCSG intersectioncsg_variable = null;
+        IntersectionInterval intersectioninterval_variable = null;
+        InvertLightColorMaterial invertlightcolormaterial_variable = null;
+        IsotropicMetalTextMaterial isotropicmetaltextmaterial_variable = null;
+        KilimRosemalingMaterial kilimrosemalingmaterial_variable = null;
+        LambertMaterial lambertmaterial_variable = null;
+        LavaFlowMaterial lavaflowmaterial_variable = null;
+        Letter3D letter3d_variable = null;
+        LetterUtils3D letterutils3d_variable = null;
+        Light light_variable = null;
+        LightProperties lightproperties_variable = null;
+        LightningMaterial lightningmaterial_variable = null;
+        LinearGradientMaterial lineargradientmaterial_variable = null;
+        MarbleMaterial marblematerial_variable = null;
+        MarblePBRMaterial marblepbrmaterial_variable = null;
+        //Material material_variable = null;
+        MaterialType materialtype_variable = null;
+        MaterialUtils materialutils_variable = null;
+        MathUtil mathutil_variable = null;
+        Matrix3 matrix3_variable = null;
+        Matrix4 matrix4_variable = null;
+        MetallicMaterial metallicmaterial_variable = null;
+        MirrorMaterial mirrormaterial_variable = null;
+        MoonSurfaceMaterial moonsurfacematerial_variable = null;
+        MosaicMaterial mosaicmaterial_variable = null;
+        MultiMixMaterial multimixmaterial_variable = null;
+        MuratPointLight muratpointlight_variable = null;
+        NazarMaterial nazarmaterial_variable = null;
+        NeutralMaterial neutralmaterial_variable = null;
+        NoiseUtil noiseutil_variable = null;
+        NonScaledTransparentPNGMaterial nonscaledtransparentpngmaterial_variable = null;
+        NordicWeaveMaterial nordicweavematerial_variable = null;
+        NordicWoodMaterial nordicwoodmaterial_variable = null;
+        NorthernLightMaterial northernlightmaterial_variable = null;
+        NorwegianRoseMaterial norwegianrosematerial_variable = null;
+        ObsidianMaterial obsidianmaterial_variable = null;
+        OpticalIllusionMaterial opticalillusionmaterial_variable = null;
+        OrbitalMaterial orbitalmaterial_variable = null;
+        //PBRCapableMaterial pbrcapablematerial_variable = null;
+        PhongElenaMaterial phongelenamaterial_variable = null;
+        PhongMaterial phongmaterial_variable = null;
+        PhongTextMaterial phongtextmaterial_variable = null;
+        PixelArtMaterial pixelartmaterial_variable = null;
+        Plane plane_variable = null;
+        PlasticPBRMaterial plasticpbrmaterial_variable = null;
+        PlatinumMaterial platinummaterial_variable = null;
+        Point3 point3_variable = null;
+        PolkaDotMaterial polkadotmaterial_variable = null;
+        PolynomialSolver polynomialsolver_variable = null;
+        ProceduralCloudMaterial proceduralcloudmaterial_variable = null;
+        ProceduralFlowerMaterial proceduralflowermaterial_variable = null;
+        PulsatingPointLight pulsatingpointlight_variable = null;
+        PureWaterMaterial purewatermaterial_variable = null;
+        QuantumFieldMaterial quantumfieldmaterial_variable = null;
+        RadialGradientMaterial radialgradientmaterial_variable = null;
+        RandomMaterial randommaterial_variable = null;
+        Ray ray_variable = null;
+        Rectangle3D rectangle3d_variable = null;
+        RectangleCheckerMaterial rectanglecheckermaterial_variable = null;
+        RectangularPrism rectangularprism_variable = null;
+        ReflectiveMaterial reflectivematerial_variable = null;
+        ResizeImage resizeimage_variable = null;
+        RosemalingMaterial rosemalingmaterial_variable = null;
+        RoughMaterial roughmaterial_variable = null;
+        RubyMaterial rubymaterial_variable = null;
+        RuneStoneMaterial runestonematerial_variable = null;
+        SalmonMaterial salmonmaterial_variable = null;
+        Scene scene_variable = null;
+        SceneParser sceneparser_variable = null;
+        SilverMaterial silvermaterial_variable = null;
+        SilverPBRMaterial silverpbrmaterial_variable = null;
+        SimitMaterial simitmaterial_variable = null;
+        SmartGlassMaterial smartglassmaterial_variable = null;
+        SolidCheckerboardMaterial solidcheckerboardmaterial_variable = null;
+        SolidColorMaterial solidcolormaterial_variable = null;
+        Sphere sphere_variable = null;
+        SphereLight spherelight_variable = null;
+        SphereWordTextureMaterial spherewordtexturematerial_variable = null;
+        SpotLight spotlight_variable = null;
+        SquaredMaterial squaredmaterial_variable = null;
+        StainedGlassMaterial stainedglassmaterial_variable = null;
+        StarfieldMaterial starfieldmaterial_variable = null;
+        StarryNightMaterial starrynightmaterial_variable = null;
+        StripeDirection stripedirection_variable = null;
+        StripedMaterial stripedmaterial_variable = null;
+        SultanKingMaterial sultankingmaterial_variable = null;
+        SuperBrightDebugMaterial superbrightdebugmaterial_variable = null;
+        TelemarkPatternMaterial telemarkpatternmaterial_variable = null;
+        TextDielectricMaterial textdielectricmaterial_variable = null;
+        TextureMaterial texturematerial_variable = null;
+        TexturedCheckerboardMaterial texturedcheckerboardmaterial_variable = null;
+        TexturedPhongMaterial texturedphongmaterial_variable = null;
+        ThresholdMaterial thresholdmaterial_variable = null;
+        Torus torus_variable = null;
+        TorusKnot torusknot_variable = null;
+        TransparentColorMaterial transparentcolormaterial_variable = null;
+        TransparentEmissivePNGMaterial transparentemissivepngmaterial_variable = null;
+        TransparentEmojiMaterial transparentemojimaterial_variable = null;
+        TransparentPNGMaterial transparentpngmaterial_variable = null;
+        TransparentPlane transparentplane_variable = null;
+        Triangle triangle_variable = null;
+        TriangleMaterial trianglematerial_variable = null;
+        TubeLight tubelight_variable = null;
+        TulipFjordMaterial tulipfjordmaterial_variable = null;
+        TurkishDelightMaterial turkishdelightmaterial_variable = null;
+        TurkishTileMaterial turkishtilematerial_variable = null;
+        UnionCSG unioncsg_variable = null;
+        Utilities utilities_variable = null;
+        Vector2 vector2_variable = null;
+        Vector3 vector3_variable = null;
+        VikingMetalMaterial vikingmetalmaterial_variable = null;
+        VikingRuneMaterial vikingrunematerial_variable = null;
+        WaterPBRMaterial waterpbrmaterial_variable = null;
+        WaterRippleMaterial waterripplematerial_variable = null;
+        WaterfallMaterial waterfallmaterial_variable = null;
+        WoodGrainMaterial woodgrainmaterial_variable = null;
+        WoodMaterial woodmaterial_variable = null;
+        WoodPBRMaterial woodpbrmaterial_variable = null;
+        WordMaterial wordmaterial_variable = null;
+        XRayMaterial xraymaterial_variable = null;
+    }
+    ///////////
+
+    private static final void setManagerColorsFonts() {
+        Font bigFont = new Font("Arial", Font.PLAIN, 20);
+        Color textColor = Color.BLUE;
+
+        UIManager.put("TextField.font", bigFont);
+        UIManager.put("Label.font", bigFont);
+        UIManager.put("Button.font", bigFont);
+        UIManager.put("OptionPane.messageFont", bigFont);
+
+        // Yazı renklerini ayarla
+        UIManager.put("TextField.foreground", textColor);
+        UIManager.put("Label.foreground", textColor);
+        UIManager.put("OptionPane.messageForeground", textColor);
+        UIManager.put("Button.foreground", textColor);
+    }
+
+    public static void main(String[] args) {
+        setManagerColorsFonts();
+        forCompileNames(); //For compile all classes
+
+        javax.swing.SwingUtilities.invokeLater(new Runnable() {
+            public void run() {
+                new ElenaRayTracerGUI().setVisible(true);
+            }
+        });
+    }
+
+}
