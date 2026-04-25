@@ -865,14 +865,14 @@ public class ElenaRayTracerGUI extends JFrame {
         materialCombo.setFont(new Font("Serif", 1, 20));
         materialCombo.setForeground(Color.GREEN.darker());
 
-        JButton addShapeBtn = ModernComponentFactory.createPrimaryButton("Add Shape");
+        JButton addShapeBtn = ModernComponentFactory.createPrimaryButton("Add");
         addShapeBtn.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 addShape();
             }
         });
 
-        JButton clearAllShapesBtn = ModernComponentFactory.createPrimaryButton("Clear All Shapes");
+        JButton clearAllShapesBtn = ModernComponentFactory.createPrimaryButton("Clear");
         //clearAllShapesBtn.setForeground(Color.MAGENTA);
         clearAllShapesBtn.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
